@@ -23,11 +23,13 @@ describe.skipIf(!redisUrl)('BullMQ pipeline (integration)', () => {
     connection.disconnect();
   });
 
-  it('runs a ping job end to end', async () => {
+  // Connecting three Redis clients and starting a worker can take several seconds on a cold CI
+  // runner, so the test gets a budget that comfortably exceeds the inner job wait.
+  it('runs a ping job end to end', { timeout: 30_000 }, async () => {
     await events.waitUntilReady();
     const nonce = `it-${Date.now()}`;
     const job = await queue.add(SYSTEM_JOBS.ping, { nonce }, DEFAULT_JOB_OPTIONS);
-    const result = systemPingResultSchema.parse(await job.waitUntilFinished(events, 10_000));
+    const result = systemPingResultSchema.parse(await job.waitUntilFinished(events, 20_000));
     expect(result.nonce).toBe(nonce);
   });
 });
