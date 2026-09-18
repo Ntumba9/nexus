@@ -45,7 +45,7 @@ test('project → service → incident → acknowledge → assign → comment �
   await page.getByRole('button', { name: 'Add service' }).click();
   await page.getByLabel('Name', { exact: true }).fill('Checkout API');
   await page.getByRole('button', { name: 'Create service' }).click();
-  await expect(page.getByRole('cell', { name: 'Checkout API' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Checkout API', exact: true })).toBeVisible();
   await expect(page.getByText('Not monitored')).toBeVisible(); // honest: no monitoring yet
 
   // Open an incident against that service.
