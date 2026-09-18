@@ -2,12 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 1 complete (foundation).** The monorepo, API, web app, workers, database
-> package, Docker Compose setup and CI workflow exist. Lint, typecheck, unit tests and builds pass locally;
-> Docker-dependent pieces (compose, Dockerfiles, integration tests) are written but **not yet run**
-> because Docker was unavailable when they were written. Product features
-> (authentication, incidents, monitoring, GitHub, AI…) are **not built yet** — see the
-> [roadmap](#roadmap). Sections describing features are the target design.
+> **Status: Phase 2 complete (authentication, organizations, RBAC).** The foundation, accounts,
+> sessions, organizations, role-based access control and tenant isolation are built and tested in
+> CI (unit, API integration against real PostgreSQL and Redis, and Playwright end-to-end).
+> Product features — incidents, monitoring, GitHub, automation, knowledge base and AI — are **not
+> built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
 
 ## What it is
 
@@ -27,8 +26,11 @@ useful when the AI provider is unavailable.
 
 ## What works today
 
-- `GET /health/live` and `GET /health/ready` (PostgreSQL + Redis) on the API, with Swagger UI at `/api/docs`
-- Web status page that shows live platform health from the API (with an error state)
+- Register, log in and log out with Argon2id passwords and opaque, revocable, hashed session tokens in HttpOnly cookies; rate-limited auth endpoints
+- Organizations with onboarding, an organization switcher and settings; members with five roles (OWNER, ADMIN, DEVELOPER, SUPPORT, VIEWER)
+- One explicit permission matrix enforced by default-deny guards; tenant isolation tested (a user cannot reach another organization by changing an id)
+- Authenticated web app shell (dark UI): login, register, onboarding, overview, settings and members, with loading, error and empty states
+- `GET /health/live` and `GET /health/ready` (PostgreSQL + Redis) on the API, with Swagger UI at `/api/docs`; a platform status page at `/status`
 - Worker process with a BullMQ `system` queue and a `ping` smoke job proving the Redis → worker pipeline
 - PostgreSQL with pgvector and citext enabled through a Prisma migration
 - Validated environment configuration (fails fast, never echoes secret values)
@@ -128,17 +130,21 @@ only PostgreSQL and Redis start.
 All variables are validated at startup by `packages/config`; a missing or invalid value stops the
 process with a message naming the variable (never its value). See [.env.example](.env.example).
 
-| Variable                                                     | Used by      | Notes                                        |
-| ------------------------------------------------------------ | ------------ | -------------------------------------------- |
-| `DATABASE_URL`                                               | api          | `postgresql://…`                             |
-| `REDIS_URL`                                                  | api, workers | `redis://…`                                  |
-| `API_HOST`, `API_PORT`                                       | api          | default `0.0.0.0:3001`                       |
-| `WEB_ORIGIN`                                                 | api          | CORS origin, default `http://localhost:3000` |
-| `SWAGGER_ENABLED`                                            | api          | `true`/`false`                               |
-| `API_INTERNAL_URL`                                           | web          | server-side URL of the API                   |
-| `WORKER_CONCURRENCY`, `WORKER_HEALTH_HOST/_PORT`             | workers      | defaults `5`, `0.0.0.0:3002`                 |
-| `NODE_ENV`, `LOG_LEVEL`                                      | all          |                                              |
-| `POSTGRES_PASSWORD`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` | compose      | Docker only                                  |
+| Variable                                                     | Used by      | Notes                                         |
+| ------------------------------------------------------------ | ------------ | --------------------------------------------- |
+| `DATABASE_URL`                                               | api          | `postgresql://…`                              |
+| `REDIS_URL`                                                  | api, workers | `redis://…`                                   |
+| `API_HOST`, `API_PORT`                                       | api          | default `0.0.0.0:3001`                        |
+| `WEB_ORIGIN`                                                 | api          | CORS origin, default `http://localhost:3000`  |
+| `SWAGGER_ENABLED`                                            | api          | `true`/`false`                                |
+| `TRUST_PROXY_HOPS`                                           | api          | reverse-proxy hops to trust for client IP (0) |
+| `COOKIE_SECURE`                                              | api          | session cookie `Secure`; default: production  |
+| `SESSION_IDLE_TTL_HOURS`, `SESSION_ABSOLUTE_TTL_DAYS`        | api          | defaults `168` hours, `30` days               |
+| `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`      | api          | defaults `10` per `900` s per account         |
+| `API_INTERNAL_URL`                                           | web          | server-side URL of the API                    |
+| `WORKER_CONCURRENCY`, `WORKER_HEALTH_HOST/_PORT`             | workers      | defaults `5`, `0.0.0.0:3002`                  |
+| `NODE_ENV`, `LOG_LEVEL`                                      | all          |                                               |
+| `POSTGRES_PASSWORD`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` | compose      | Docker only                                   |
 
 In production `.env` is never loaded; configuration must come from the real environment.
 
@@ -163,6 +169,8 @@ pnpm typecheck
 pnpm test                    # unit tests, no infrastructure needed
 pnpm build
 pnpm test:integration        # needs PostgreSQL + Redis (pnpm dev:infra, migrations applied)
+pnpm test:e2e                # Playwright; builds, then starts API + web (needs the same services;
+                             # first run: pnpm --filter @nexus/e2e exec playwright install chromium)
 ```
 
 Integration tests skip themselves when `DATABASE_URL` / `REDIS_URL` are not set.
@@ -196,7 +204,7 @@ local development fallback; no paid embedding provider is configured.
 | ----- | --------------------------------------------- | ------- |
 | 0     | Architecture and design docs                  | Done    |
 | 1     | Monorepo, Next.js, NestJS, Prisma, Docker, CI | Done    |
-| 2     | Auth, organisations, RBAC                     | Next    |
+| 2     | Auth, organisations, RBAC                     | Done    |
 | 3     | Projects, services, incidents, dashboard      | Planned |
 | 4     | Monitoring and workers                        | Planned |
 | 5     | GitHub integration                            | Planned |

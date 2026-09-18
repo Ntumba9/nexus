@@ -81,3 +81,20 @@ Organization ─< AuditLog, ApiKey
 2. Repositories require `TenantContext`; lint rule/test forbids raw Prisma usage for owned models outside repositories.
 3. Optional defence in depth: Postgres Row Level Security with `SET LOCAL app.org_id` per transaction (evaluated in Phase 2; decision recorded in ADR-005).
 4. Automated cross-tenant tests for every endpoint.
+
+---
+
+## Phase 2 as implemented
+
+Migration `20260918120000_identity_organizations_sessions`. Conventions actually used: UUID primary keys from `gen_random_uuid()` (v4), Prisma default camelCase table and column names, `timestamptz` timestamps (see ADR-009).
+
+| Table                | Purpose and key constraints                                                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `User`               | `email` is `citext` and unique (case-insensitive). `passwordHash` must be an Argon2id PHC string (CHECK). `name` 1-100 chars (CHECK). `disabledAt` blocks login and existing sessions.                                      |
+| `Organization`       | `slug` unique, lower-case-hyphen format and 3-63 chars (CHECK); `name` 1-100 chars (CHECK).                                                                                                                                 |
+| `OrganizationMember` | `role` is the `Role` enum. Unique `(organizationId, userId)` and unique `(organizationId, id)` (the composite key later tenant tables reference). FK to organisation cascades; FK to user is `RESTRICT`. Index on `userId`. |
+| `Session`            | `tokenHash` unique (SHA-256 of the cookie token). `expiresAt` (idle, sliding) must be after `createdAt` and no later than `absoluteExpiresAt` (CHECK). `revokedAt` for revocation. Cascades from user.                      |
+
+The "at least one OWNER per organisation" rule is enforced in the service under a row lock on the organisation (a database-only constraint would need a deferred trigger); concurrent demotion is covered by an integration test.
+
+Not yet implemented from the design above: `Project`, `Service`, incidents, monitoring, integrations, automation, notifications, knowledge, AI, `AuditLog` and `ApiKey`.

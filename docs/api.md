@@ -38,3 +38,28 @@ Status codes: 200/201/204, 400 validation, 401 unauthenticated, 403 forbidden (m
 | Ops                                        | `GET /health/live`, `GET /health/ready`                                                                                                                                                                                        |
 
 State changes on incidents use `POST …/transitions` with `{ "to": "ACKNOWLEDGED" }` rather than a free `PATCH` on `status`, so the state machine and event recording cannot be bypassed.
+
+---
+
+## Phase 2 as implemented
+
+Paths below are relative to `/api/v1` (health endpoints are unversioned: `/health/live`, `/health/ready`). Browsers reach them through the web app's same-origin proxy at `/api/v1/*`. Interactive docs: `/api/docs` when `SWAGGER_ENABLED=true` (route and tag summaries only; request schemas live in `packages/shared` as Zod).
+
+Authentication is the `nexus_session` cookie. Every state-changing request must carry an `Origin` header equal to `WEB_ORIGIN`.
+
+| Method and path                   | Access                | Notes                                                                                       |
+| --------------------------------- | --------------------- | ------------------------------------------------------------------------------------------- |
+| `POST /auth/register`             | public, rate limited  | 201 with `{ user, memberships }` and a session cookie. 409 `EMAIL_TAKEN`, 400 validation.   |
+| `POST /auth/login`                | public, rate limited  | 200 with `{ user, memberships }`. Uniform 401 `INVALID_CREDENTIALS`. New session each time. |
+| `POST /auth/logout`               | authenticated         | 204, revokes the session and clears the cookie.                                             |
+| `GET /auth/me`                    | authenticated         | The current user and their memberships (organisation, role).                                |
+| `POST /orgs`                      | authenticated         | Creates an organisation; the caller becomes its only OWNER.                                 |
+| `GET /orgs`                       | authenticated         | `{ data: [...] }`: only the caller's organisations.                                         |
+| `GET /orgs/:orgId`                | `organization.read`   | Organisation plus the caller's role.                                                        |
+| `PATCH /orgs/:orgId`              | `organization.update` | Body `{ name }`. The slug is immutable.                                                     |
+| `GET /orgs/:orgId/members`        | `users.read`          | `{ data: [...] }`.                                                                          |
+| `POST /orgs/:orgId/members`       | `users.manage`        | Body `{ email, role }`; the user must already exist. 404 unknown email, 409 already member. |
+| `PATCH /orgs/:orgId/members/:id`  | `users.manage`        | Body `{ role }`. Only an OWNER can grant, change or remove OWNER; 409 `LAST_OWNER`.         |
+| `DELETE /orgs/:orgId/members/:id` | `users.manage`        | 204. Same ownership rules.                                                                  |
+
+Status conventions actually in use: **401** no or invalid session; **403** authenticated member lacking the permission (`FORBIDDEN`), an ownership rule (`OWNER_ONLY`), a CSRF origin mismatch, or an undeclared route (`ROUTE_MISCONFIGURED`); **404** unknown resource _or a resource in an organisation you are not a member of_ (identical responses); **409** conflicts (`EMAIL_TAKEN`, `ALREADY_MEMBER`, `LAST_OWNER`); **429** rate limited with `Retry-After`; **503** `RATE_LIMIT_UNAVAILABLE` when the limiter's store is down (fails closed).
