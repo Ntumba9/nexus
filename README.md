@@ -58,9 +58,9 @@ Details: [docs/architecture.md](docs/architecture.md). Decisions: [docs/decision
 ## Tech stack
 
 TypeScript (strict) · Next.js · NestJS · PostgreSQL + pgvector · Prisma · Redis · BullMQ · Zod ·
-Tailwind CSS · Vitest · Supertest · ESLint · Prettier · Docker Compose · GitHub Actions.
-Later phases add: Playwright, TanStack Query, React Hook Form, shadcn/ui components, OpenTelemetry
-and the Anthropic SDK — each is added when a feature first needs it.
+Tailwind CSS · TanStack Query · React Hook Form · Argon2id · Vitest · Supertest · Playwright ·
+ESLint · Prettier · Docker Compose · GitHub Actions. Later phases add OpenTelemetry and the
+Anthropic SDK — each dependency is added when a feature first needs it.
 
 ## Local development
 
@@ -130,21 +130,21 @@ only PostgreSQL and Redis start.
 All variables are validated at startup by `packages/config`; a missing or invalid value stops the
 process with a message naming the variable (never its value). See [.env.example](.env.example).
 
-| Variable                                                     | Used by      | Notes                                         |
-| ------------------------------------------------------------ | ------------ | --------------------------------------------- |
-| `DATABASE_URL`                                               | api          | `postgresql://…`                              |
-| `REDIS_URL`                                                  | api, workers | `redis://…`                                   |
-| `API_HOST`, `API_PORT`                                       | api          | default `0.0.0.0:3001`                        |
-| `WEB_ORIGIN`                                                 | api          | CORS origin, default `http://localhost:3000`  |
-| `SWAGGER_ENABLED`                                            | api          | `true`/`false`                                |
-| `TRUST_PROXY_HOPS`                                           | api          | reverse-proxy hops to trust for client IP (0) |
-| `COOKIE_SECURE`                                              | api          | session cookie `Secure`; default: production  |
-| `SESSION_IDLE_TTL_HOURS`, `SESSION_ABSOLUTE_TTL_DAYS`        | api          | defaults `168` hours, `30` days               |
-| `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`      | api          | defaults `10` per `900` s per account         |
-| `API_INTERNAL_URL`                                           | web          | server-side URL of the API                    |
-| `WORKER_CONCURRENCY`, `WORKER_HEALTH_HOST/_PORT`             | workers      | defaults `5`, `0.0.0.0:3002`                  |
-| `NODE_ENV`, `LOG_LEVEL`                                      | all          |                                               |
-| `POSTGRES_PASSWORD`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` | compose      | Docker only                                   |
+| Variable                                                     | Used by      | Notes                                                                                                    |
+| ------------------------------------------------------------ | ------------ | -------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                               | api          | `postgresql://…`                                                                                         |
+| `REDIS_URL`                                                  | api, workers | `redis://…`                                                                                              |
+| `API_HOST`, `API_PORT`                                       | api          | default `0.0.0.0:3001`                                                                                   |
+| `WEB_ORIGIN`                                                 | api          | must equal the URL you browse (default `http://localhost:3000`); used for CORS and the CSRF Origin check |
+| `SWAGGER_ENABLED`                                            | api          | `true`/`false`                                                                                           |
+| `TRUST_PROXY_HOPS`                                           | api          | reverse-proxy hops to trust for client IP (0)                                                            |
+| `COOKIE_SECURE`                                              | api          | session cookie `Secure`; default: production                                                             |
+| `SESSION_IDLE_TTL_HOURS`, `SESSION_ABSOLUTE_TTL_DAYS`        | api          | defaults `168` hours, `30` days                                                                          |
+| `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`      | api          | defaults `10` per `900` s per account                                                                    |
+| `API_INTERNAL_URL`                                           | web          | server-side URL of the API                                                                               |
+| `WORKER_CONCURRENCY`, `WORKER_HEALTH_HOST/_PORT`             | workers      | defaults `5`, `0.0.0.0:3002`                                                                             |
+| `NODE_ENV`, `LOG_LEVEL`                                      | all          |                                                                                                          |
+| `POSTGRES_PASSWORD`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT` | compose      | Docker only                                                                                              |
 
 In production `.env` is never loaded; configuration must come from the real environment.
 
