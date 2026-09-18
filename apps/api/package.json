@@ -1,0 +1,35 @@
+{
+  "name": "@nexus/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/main.js",
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.2.5",
+    "@nestjs/core": "11.2.5",
+    "@nestjs/platform-express": "11.2.5",
+    "@nestjs/swagger": "11.4.7",
+    "@nexus/config": "workspace:*",
+    "@nexus/database": "workspace:*",
+    "@nexus/shared": "workspace:*",
+    "helmet": "8.3.0",
+    "ioredis": "5.11.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "11.0.24",
+    "@nestjs/testing": "11.2.5",
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.3",
+    "@types/supertest": "7.2.1",
+    "supertest": "7.2.2",
+    "vitest": "3.2.7"
+  }
+}

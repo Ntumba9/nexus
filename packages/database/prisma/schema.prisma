@@ -1,0 +1,17 @@
+// NEXUS database schema.
+//
+// Phase 1 intentionally declares no domain models: it establishes the datasource, the required
+// PostgreSQL extensions and the migration pipeline. Domain models arrive with the phases that
+// need them (see docs/database.md for the full design).
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // vector: pgvector embeddings for the knowledge base (Phase 8). citext: case-insensitive emails.
+  extensions = [vector, citext]
+}

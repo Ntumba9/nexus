@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - workers
+  - packages/*
+
+# pnpm 10 blocks dependency install scripts by default. Only these are allowed:
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - esbuild
+  - prisma

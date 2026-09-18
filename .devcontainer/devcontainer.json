@@ -1,0 +1,20 @@
+{
+  "name": "NEXUS",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "corepack enable && pnpm install && cp -n .env.example .env",
+  "postStartCommand": "docker compose up -d --wait postgres redis",
+  "forwardPorts": [3000, 3001, 3002],
+  "portsAttributes": {
+    "3000": { "label": "web" },
+    "3001": { "label": "api" },
+    "3002": { "label": "worker health" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "Prisma.prisma"]
+    }
+  }
+}

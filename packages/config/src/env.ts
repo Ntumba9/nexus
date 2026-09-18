@@ -1,0 +1,66 @@
+import { z } from 'zod';
+
+/** A URL string restricted to the given protocols (each including the trailing colon). */
+const urlWithProtocol = (protocols: string[], label: string) =>
+  z.string().refine(
+    (value) => {
+      try {
+        return protocols.includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    },
+    { message: `must be a valid ${label} URL` },
+  );
+
+const port = z.coerce.number().int().min(1).max(65535);
+
+const baseEnv = {
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+};
+
+const databaseUrl = urlWithProtocol(['postgresql:', 'postgres:'], 'PostgreSQL');
+const redisUrl = urlWithProtocol(['redis:', 'rediss:'], 'Redis');
+const httpUrl = urlWithProtocol(['http:', 'https:'], 'HTTP(S)');
+
+export const apiEnvSchema = z.object({
+  ...baseEnv,
+  DATABASE_URL: databaseUrl,
+  REDIS_URL: redisUrl,
+  API_HOST: z.string().min(1).default('0.0.0.0'),
+  API_PORT: port.default(3001),
+  /** Browser origin allowed by CORS. */
+  WEB_ORIGIN: httpUrl.default('http://localhost:3000'),
+  SWAGGER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  /**
+   * Optional: AI features are disabled when unset (the rest of the product must keep working).
+   * Read only from the environment; never logged, never sent to the browser.
+   */
+  ANTHROPIC_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+});
+export type ApiEnv = z.infer<typeof apiEnvSchema>;
+
+/** Workers only need Redis in Phase 1; DATABASE_URL is added when a job first touches the DB. */
+export const workerEnvSchema = z.object({
+  ...baseEnv,
+  REDIS_URL: redisUrl,
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
+  WORKER_HEALTH_HOST: z.string().min(1).default('0.0.0.0'),
+  WORKER_HEALTH_PORT: port.default(3002),
+});
+export type WorkerEnv = z.infer<typeof workerEnvSchema>;
+
+/** Server-side web configuration. Never expose these values to the browser. */
+export const webEnvSchema = z.object({
+  ...baseEnv,
+  /** Where the Next.js server reaches the API (differs from the browser URL inside Docker). */
+  API_INTERNAL_URL: httpUrl.default('http://localhost:3001'),
+});
+export type WebEnv = z.infer<typeof webEnvSchema>;

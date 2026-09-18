@@ -1,0 +1,38 @@
+{
+  "name": "nexus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NEXUS — developer operations and incident intelligence platform",
+  "license": "MIT",
+  "packageManager": "pnpm@10.30.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" --filter \"./workers\" dev",
+    "dev:infra": "docker compose up -d --wait postgres redis",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm --filter \"./packages/*\" build && pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter \"./packages/*\" build && pnpm -r --if-present test",
+    "test:integration": "pnpm --filter \"./packages/*\" build && pnpm -r --if-present test:integration",
+    "db:generate": "pnpm --filter @nexus/database generate",
+    "db:migrate:dev": "pnpm --filter @nexus/database migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @nexus/database migrate:deploy",
+    "clean": "pnpm -r exec node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "env:check": "pnpm --filter @nexus/config build && node scripts/check-env.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@next/eslint-plugin-next": "16.3.5",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.8",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0"
+  }
+}

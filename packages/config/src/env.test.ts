@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest';
+import { apiEnvSchema, EnvValidationError, loadEnv, workerEnvSchema } from './index';
+
+const valid = {
+  DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+  REDIS_URL: 'redis://localhost:6379',
+};
+
+describe('loadEnv', () => {
+  it('applies defaults and coerces types', () => {
+    const env = loadEnv(apiEnvSchema, { ...valid, API_PORT: '4000' });
+    expect(env.API_PORT).toBe(4000);
+    expect(env.NODE_ENV).toBe('development');
+    expect(env.SWAGGER_ENABLED).toBe(true);
+  });
+
+  it('rejects missing required variables', () => {
+    expect(() => loadEnv(apiEnvSchema, {})).toThrow(EnvValidationError);
+  });
+
+  it('rejects wrong protocols', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...valid, DATABASE_URL: 'mysql://u:p@h/db' })).toThrow(
+      /DATABASE_URL/,
+    );
+  });
+
+  it('does not leak secret values in error messages', () => {
+    const attempt = () =>
+      loadEnv(apiEnvSchema, { ...valid, DATABASE_URL: 'mysql://user:supersecret@h/db' });
+    expect(attempt).toThrow(EnvValidationError);
+    expect(attempt).not.toThrow(/supersecret/);
+  });
+
+  it('validates worker settings', () => {
+    expect(() =>
+      loadEnv(workerEnvSchema, { REDIS_URL: valid.REDIS_URL, WORKER_CONCURRENCY: '0' }),
+    ).toThrow(/WORKER_CONCURRENCY/);
+  });
+
+  it('treats a missing or blank ANTHROPIC_API_KEY as "AI disabled", not an error', () => {
+    expect(loadEnv(apiEnvSchema, valid).ANTHROPIC_API_KEY).toBeUndefined();
+    expect(
+      loadEnv(apiEnvSchema, { ...valid, ANTHROPIC_API_KEY: '  ' }).ANTHROPIC_API_KEY,
+    ).toBeUndefined();
+    expect(loadEnv(apiEnvSchema, { ...valid, ANTHROPIC_API_KEY: 'k' }).ANTHROPIC_API_KEY).toBe('k');
+  });
+});
