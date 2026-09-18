@@ -1,24 +1,12 @@
-import { randomBytes } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { PrismaClient } from '@nexus/database';
 import type { MembershipDto, OrganizationDetailDto } from '@nexus/shared';
 import { ApiError } from '../common/api-error';
 import type { TenantContext } from '../common/request-context';
+import { slugify } from '../common/slug';
 import { PRISMA } from '../infrastructure/tokens';
 
 const UNIQUE_VIOLATION = 'P2002';
-
-export function slugify(name: string): string {
-  const base = name
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    .replace(/-+$/g, '');
-  return `${base || 'org'}-${randomBytes(3).toString('hex')}`;
-}
 
 @Injectable()
 export class OrganizationsService {
@@ -29,7 +17,11 @@ export class OrganizationsService {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const org = await this.prisma.organization.create({
-          data: { name, slug: slugify(name), members: { create: { userId, role: 'OWNER' } } },
+          data: {
+            name,
+            slug: slugify(name, 'org'),
+            members: { create: { userId, role: 'OWNER' } },
+          },
         });
         return toDetail(org, 'OWNER');
       } catch (error) {

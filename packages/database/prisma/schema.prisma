@@ -44,18 +44,29 @@ model User {
   createdAt    DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
 
-  memberships OrganizationMember[]
-  sessions    Session[]
+  memberships       OrganizationMember[]
+  sessions          Session[]
+  incidentsCreated  Incident[]           @relation("IncidentCreatedBy")
+  incidentEvents    IncidentEvent[]
+  incidentComments  IncidentComment[]
+  assignedIncidents IncidentAssignment[] @relation("AssignedUser")
+  assignmentsMade   IncidentAssignment[] @relation("AssignedBy")
 }
 
 model Organization {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  slug            String   @unique
+  /// Last allocated per-organisation incident number. Incremented atomically inside the incident
+  /// creation transaction, so numbers are gap-free and never reused.
+  incidentCounter Int      @default(0)
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
 
-  members OrganizationMember[]
+  members   OrganizationMember[]
+  projects  Project[]
+  services  Service[]
+  incidents Incident[]
 }
 
 model OrganizationMember {
@@ -90,4 +101,194 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 3: projects, services, incidents.
+//
+// Tenant isolation is enforced by the database, not just the application: every child references
+// its parent through a COMPOSITE foreign key (organizationId, parentId) -> parent(organizationId, id).
+// A row can therefore never point at a parent that belongs to a different organisation, whatever
+// the application does. (Optional parents, e.g. Incident.serviceId, use MATCH SIMPLE semantics:
+// the check is skipped while the optional column is NULL.)
+// ---------------------------------------------------------------------------------------------
+
+enum ServiceEnvironment {
+  PRODUCTION
+  STAGING
+  DEVELOPMENT
+}
+
+enum ServiceHealth {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  DOWN
+}
+
+enum IncidentSeverity {
+  SEV1
+  SEV2
+  SEV3
+  SEV4
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  INVESTIGATING
+  MITIGATED
+  RESOLVED
+  CANCELLED
+}
+
+enum IncidentSource {
+  MANUAL
+  MONITORING
+  AUTOMATION
+  WEBHOOK
+}
+
+enum IncidentEventType {
+  CREATED
+  UPDATED
+  STATUS_CHANGED
+  SEVERITY_CHANGED
+  ASSIGNED
+  UNASSIGNED
+  COMMENT_ADDED
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  AUTOMATION
+  AI
+}
+
+model Project {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @db.Uuid
+  name           String
+  slug           String
+  description    String       @default("")
+  archivedAt     DateTime?    @db.Timestamptz(6)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(6)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  services       Service[]
+
+  @@unique([organizationId, slug])
+  @@unique([organizationId, id])
+}
+
+model Service {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String             @db.Uuid
+  projectId      String             @db.Uuid
+  name           String
+  environment    ServiceEnvironment @default(PRODUCTION)
+  /// Set by monitoring (Phase 4). UNKNOWN means "not monitored", never "healthy".
+  healthStatus   ServiceHealth      @default(UNKNOWN)
+  description    String             @default("")
+  archivedAt     DateTime?          @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @db.Timestamptz(6)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project            @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  incidents      Incident[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, projectId, name, environment])
+  @@index([organizationId, projectId])
+}
+
+model Incident {
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String               @db.Uuid
+  /// Human-facing, per-organisation sequence (INC-42). Unique with organizationId.
+  number         Int
+  serviceId      String?              @db.Uuid
+  title          String
+  description    String               @default("")
+  severity       IncidentSeverity
+  status         IncidentStatus       @default(OPEN)
+  source         IncidentSource       @default(MANUAL)
+  createdById    String?              @db.Uuid
+  acknowledgedAt DateTime?            @db.Timestamptz(6)
+  mitigatedAt    DateTime?            @db.Timestamptz(6)
+  resolvedAt     DateTime?            @db.Timestamptz(6)
+  cancelledAt    DateTime?            @db.Timestamptz(6)
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime             @updatedAt @db.Timestamptz(6)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  service        Service?             @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy      User?                @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  events         IncidentEvent[]
+  comments       IncidentComment[]
+  assignments    IncidentAssignment[]
+  tags           IncidentTag[]
+
+  @@unique([organizationId, number])
+  @@unique([organizationId, id])
+  @@index([organizationId, status, severity])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, serviceId])
+}
+
+/// Append-only incident timeline. UPDATE, DELETE and TRUNCATE are rejected by database triggers.
+model IncidentEvent {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String            @db.Uuid
+  incidentId     String            @db.Uuid
+  type           IncidentEventType
+  actorType      ActorType
+  actorId        String?           @db.Uuid
+  data           Json              @default("{}")
+  createdAt      DateTime          @default(now()) @db.Timestamptz(6)
+  incident       Incident          @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  actor          User?             @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId, createdAt])
+  @@index([organizationId, createdAt(sort: Desc)])
+}
+
+model IncidentComment {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @db.Uuid
+  incidentId     String   @db.Uuid
+  authorId       String   @db.Uuid
+  body           String
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  incident       Incident @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  author         User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId, createdAt])
+}
+
+model IncidentAssignment {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  incidentId     String    @db.Uuid
+  userId         String    @db.Uuid
+  assignedById   String    @db.Uuid
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  /// Null while the assignment is active. A partial unique index allows one active row per user.
+  unassignedAt   DateTime? @db.Timestamptz(6)
+  incident       Incident  @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  user           User      @relation("AssignedUser", fields: [userId], references: [id], onDelete: Restrict)
+  assignedBy     User      @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([incidentId])
+  @@index([userId])
+}
+
+model IncidentTag {
+  organizationId String   @db.Uuid
+  incidentId     String   @db.Uuid
+  tag            String
+  incident       Incident @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([incidentId, tag])
+  @@index([organizationId, tag])
 }
