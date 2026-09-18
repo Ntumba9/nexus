@@ -33,9 +33,11 @@ Status: **Phase 2 implemented** (authentication, sessions, RBAC, tenant isolatio
 
 1. `organizationId` comes from the URL and is verified against the caller's membership by the guard. It is never read from a request body: an attacker-supplied `organizationId` is stripped by the Zod schemas (tested).
 2. Every query on tenant-owned data is scoped by `tenant.organizationId` from the verified context. A member id from another organisation simply matches nothing, so `PATCH /orgs/A/members/<id-from-B>` returns the same 404 as an id that never existed (tested, including checking that B's data is untouched).
-3. `OrganizationMember` exposes `@@unique([organizationId, id])` so later tenant-owned tables can reference it with composite foreign keys.
+3. **The database enforces it too (Phase 3).** Projects, services, incidents, events, comments, assignments and tags reference their parents through composite foreign keys `(organizationId, parentId)`. A cross-tenant reference is impossible for every database role, even if application code is wrong. Tests insert cross-tenant rows with raw SQL and assert PostgreSQL refuses them. Alpha cannot create an incident against Bravo's service (404, nothing created, no incident number consumed), cannot assign Bravo's users, and cannot read or change Bravo's project, service or incident through any route, including by using Bravo's ids inside Alpha's own organisation path. Foreign ids return the same 404 as ids that never existed.
 4. Route params that are not UUIDs are treated as not found before touching the database.
-5. Postgres Row Level Security was evaluated and **deferred**: application-layer scoping is covered by cross-tenant tests, and RLS adds per-transaction session-variable plumbing that is better introduced with the first large tenant-owned tables (Phase 3). Tracked in ADR-005.
+5. **Row Level Security is not enabled, deliberately.** The application connects as the bootstrap superuser in development, CI and Compose, and superusers bypass RLS, so policies would look protective while enforcing nothing. RLS needs a separate non-superuser application role and per-transaction session variables; it is scheduled with Phase 10 hardening. See ADR-010.
+6. **Append-only history (Phase 3).** The incident timeline (`IncidentEvent`) rejects UPDATE, DELETE and TRUNCATE through database triggers (tested with raw SQL), and incidents cannot be hard-deleted while they have history. Status and lifecycle timestamps are kept consistent by CHECK constraints.
+7. **Untrusted content is rendered as text.** Incident titles, descriptions and comments are user-supplied; the web app renders them through React (escaped, no raw HTML), and there is no Markdown or HTML rendering of them yet.
 
 ## Error handling (implemented)
 
@@ -109,7 +111,9 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 
 - [x] Password hashing and session management (Phase 2)
 - [x] RBAC permission map and default-deny guards (Phase 2)
-- [x] Tenant-scoped queries and isolation tests (Phase 2; RLS deferred)
+- [x] Tenant-scoped queries and isolation tests (Phase 2)
+- [x] Composite tenant foreign keys, append-only incident timeline, lifecycle CHECKs (Phase 3)
+- [ ] Row Level Security with a non-superuser application role (Phase 10; see ADR-010)
 - [x] Auth rate limiting, CSRF origin check, uniform errors, request ids (Phase 2)
 - [x] Validated env that never echoes values; Helmet headers; coarse health errors (Phase 1)
 - [ ] Webhook signature verification (Phase 5)

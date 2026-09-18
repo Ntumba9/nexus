@@ -67,7 +67,8 @@ describe.skipIf(!HAS_INFRA)('incident lifecycle (integration)', () => {
         type: 'CREATED',
         actorType: 'USER',
         actor: { id: owner.id },
-        data: { severity: 'SEV1', serviceId: service.id, tags: ['checkout', 'payments'] },
+        // The event keeps the submitted (de-duplicated) order; the incident's tags are sorted.
+        data: { severity: 'SEV1', serviceId: service.id, tags: ['payments', 'checkout'] },
       });
     });
 

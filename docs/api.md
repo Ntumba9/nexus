@@ -63,3 +63,38 @@ Authentication is the `nexus_session` cookie. Every state-changing request must 
 | `DELETE /orgs/:orgId/members/:id` | `users.manage`        | 204. Same ownership rules.                                                                  |
 
 Status conventions actually in use: **401** no or invalid session; **403** authenticated member lacking the permission (`FORBIDDEN`), an ownership rule (`OWNER_ONLY`), a CSRF origin mismatch, or an undeclared route (`ROUTE_MISCONFIGURED`); **404** unknown resource _or a resource in an organisation you are not a member of_ (identical responses); **409** conflicts (`EMAIL_TAKEN`, `ALREADY_MEMBER`, `LAST_OWNER`); **429** rate limited with `Retry-After`; **503** `RATE_LIMIT_UNAVAILABLE` when the limiter's store is down (fails closed).
+
+---
+
+## Phase 3 routes
+
+All under `/api/v1/orgs/:orgId`. Access is the permission the route declares; requests from non-members are 404.
+
+| Method and path                   | Permission                                                         | Notes                                                                                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /projects`                   | `projects.read`                                                    | `?includeArchived=true`. Includes the count of active services.                                                                                                                  |
+| `POST /projects`                  | `projects.manage`                                                  | Body `{ name, description? }`. A unique slug is generated.                                                                                                                       |
+| `GET/PATCH /projects/:id`         | `projects.read` / `projects.manage`                                |                                                                                                                                                                                  |
+| `DELETE /projects/:id`            | `projects.manage`                                                  | 204. Archives the project and its services (soft delete, idempotent).                                                                                                            |
+| `POST /projects/:id/services`     | `services.manage`                                                  | Body `{ name, environment?, description? }`. 409 `SERVICE_EXISTS`, 409 `PROJECT_ARCHIVED`.                                                                                       |
+| `GET /services`                   | `projects.read`                                                    | `?projectId=`, `?includeArchived=`.                                                                                                                                              |
+| `GET/PATCH/DELETE /services/:id`  | `projects.read` / `services.manage`                                | DELETE archives.                                                                                                                                                                 |
+| `GET /incidents`                  | `incidents.read`                                                   | Filters `status` and `severity` (comma lists), `serviceId`, `q` (title, or `42` / `INC-42`), `limit`, `cursor`. Newest first; `nextCursor` is the last incident number returned. |
+| `POST /incidents`                 | `incidents.create`                                                 | Body `{ title, severity, description?, serviceId?, tags? }`. 404 if the service is not in this organisation.                                                                     |
+| `GET /incidents/:id`              | `incidents.read`                                                   | Includes `allowedTransitions`: what _this caller_ may do next.                                                                                                                   |
+| `PATCH /incidents/:id`            | `incidents.update`                                                 | Title, description, severity, tags. Records `SEVERITY_CHANGED` / `UPDATED`; a no-op records nothing.                                                                             |
+| `POST /incidents/:id/transitions` | `incidents.update` (plus `incidents.resolve` to resolve or reopen) | Body `{ to, note? }`. 409 `INVALID_TRANSITION`, 409 `STALE_STATE`, 403 without the stronger permission.                                                                          |
+| `GET /incidents/:id/events`       | `incidents.read`                                                   | The timeline, oldest first.                                                                                                                                                      |
+| `POST /incidents/:id/comments`    | `incidents.update`                                                 | Body `{ body }`. Allowed in any status (post-incident notes).                                                                                                                    |
+| `PUT /incidents/:id/assignees`    | `incidents.update`                                                 | Body `{ userIds }` replaces the set. 400 `ASSIGNEE_NOT_MEMBER` if anyone is outside this organisation.                                                                           |
+| `GET /dashboard`                  | `incidents.read`                                                   | Active incidents by severity, most urgent list, recent incidents, service health, 14-day trend, activity.                                                                        |
+
+### Incident lifecycle
+
+```text
+OPEN → ACKNOWLEDGED → INVESTIGATING → MITIGATED → RESOLVED
+```
+
+with shortcuts forward (resolve from ACKNOWLEDGED, INVESTIGATING or MITIGATED), regression MITIGATED → INVESTIGATING, reopening RESOLVED → INVESTIGATING (requires `incidents.resolve`), and cancellation from any unresolved state. `CANCELLED` is terminal. The rule table lives once in `packages/shared/src/incidents.ts`, is tested exhaustively (all 36 status pairs), is enforced by the API on every transition, and is only _used_ by the web app to decide which buttons to show. Two simultaneous transitions cannot both succeed: the update is applied with `WHERE status = <status we validated against>`.
+
+Every change writes an `IncidentEvent` in the same transaction as the change. Event types so far: `CREATED`, `UPDATED`, `STATUS_CHANGED`, `SEVERITY_CHANGED`, `ASSIGNED`, `UNASSIGNED`, `COMMENT_ADDED`. Deployment, automation and AI events are added by the phases that create them.

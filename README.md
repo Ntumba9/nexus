@@ -2,11 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 2 complete (authentication, organizations, RBAC).** The foundation, accounts,
-> sessions, organizations, role-based access control and tenant isolation are built and tested in
-> CI (unit, API integration against real PostgreSQL and Redis, and Playwright end-to-end).
-> Product features — incidents, monitoring, GitHub, automation, knowledge base and AI — are **not
-> built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
+> **Status: Phase 3 complete (core platform).** Accounts, organizations, RBAC, projects, services,
+> incident management and the dashboard are built and tested in CI (unit, API integration against
+> real PostgreSQL and Redis, and Playwright end-to-end). Monitoring, GitHub, automation, real-time
+> updates, the knowledge base and AI are **not built yet**; see the [roadmap](#roadmap). Sections
+> describing those features are the target design.
 
 ## What it is
 
@@ -29,7 +29,10 @@ useful when the AI provider is unavailable.
 - Register, log in and log out with Argon2id passwords and opaque, revocable, hashed session tokens in HttpOnly cookies; rate-limited auth endpoints
 - Organizations with onboarding, an organization switcher and settings; members with five roles (OWNER, ADMIN, DEVELOPER, SUPPORT, VIEWER)
 - One explicit permission matrix enforced by default-deny guards; tenant isolation tested (a user cannot reach another organization by changing an id)
-- Authenticated web app shell (dark UI): login, register, onboarding, overview, settings and members, with loading, error and empty states
+- Projects and services (with archive), and incident management: a real lifecycle (OPEN → ACKNOWLEDGED → INVESTIGATING → MITIGATED → RESOLVED, plus cancel and reopen), typed severities SEV-1 to SEV-4, per-organization incident numbers (INC-42), assignments, comments and a complete, tamper-resistant timeline
+- Overview dashboard built from real data: active incidents by severity, service health (honestly "not monitored" until monitoring exists), 14-day trend, recent incidents and activity
+- Authenticated web app shell (dark UI): login, register, onboarding, dashboard, projects, services, incidents, settings and members, with loading, error and empty states
+- Tenant isolation enforced by the database as well as the application (composite foreign keys), proven by cross-tenant tests that bypass the API with raw SQL
 - `GET /health/live` and `GET /health/ready` (PostgreSQL + Redis) on the API, with Swagger UI at `/api/docs`; a platform status page at `/status`
 - Worker process with a BullMQ `system` queue and a `ping` smoke job proving the Redis → worker pipeline
 - PostgreSQL with pgvector and citext enabled through a Prisma migration
@@ -205,8 +208,8 @@ local development fallback; no paid embedding provider is configured.
 | 0     | Architecture and design docs                  | Done    |
 | 1     | Monorepo, Next.js, NestJS, Prisma, Docker, CI | Done    |
 | 2     | Auth, organisations, RBAC                     | Done    |
-| 3     | Projects, services, incidents, dashboard      | Planned |
-| 4     | Monitoring and workers                        | Planned |
+| 3     | Projects, services, incidents, dashboard      | Done    |
+| 4     | Monitoring and workers                        | Next    |
 | 5     | GitHub integration                            | Planned |
 | 6     | Automation and notifications                  | Planned |
 | 7     | Real-time                                     | Planned |

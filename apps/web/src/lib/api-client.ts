@@ -19,7 +19,7 @@ export class ApiError extends Error {
  */
 export async function apiFetch<T>(
   path: string,
-  options: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
 ): Promise<T> {
   let response: Response;
   try {

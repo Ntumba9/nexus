@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { loadEnv, webEnvSchema } from '@nexus/config';
-import type { MeResponse, OrganizationDetailDto } from '@nexus/shared';
+import type { MeResponse, OrganizationDetailDto, ProjectDto } from '@nexus/shared';
 
 export const SESSION_COOKIE = 'nexus_session';
 export const LAST_ORG_COOKIE = 'nexus_last_org';
@@ -40,5 +40,17 @@ export const getOrganization = cache(
     if (response.status === 404 || response.status === 401) return null;
     if (!response.ok) throw new Error(`Unexpected API response (${response.status})`);
     return (await response.json()) as OrganizationDetailDto;
+  },
+);
+
+/** Project details, or null if it does not exist in this organisation. */
+export const getProject = cache(
+  async (orgId: string, projectId: string): Promise<ProjectDto | null> => {
+    const response = await apiGet(
+      `/orgs/${encodeURIComponent(orgId)}/projects/${encodeURIComponent(projectId)}`,
+    );
+    if (response.status === 404 || response.status === 401) return null;
+    if (!response.ok) throw new Error(`Unexpected API response (${response.status})`);
+    return (await response.json()) as ProjectDto;
   },
 );

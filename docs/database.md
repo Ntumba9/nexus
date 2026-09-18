@@ -98,3 +98,31 @@ Migration `20260918120000_identity_organizations_sessions`. Conventions actually
 The "at least one OWNER per organisation" rule is enforced in the service under a row lock on the organisation (a database-only constraint would need a deferred trigger); concurrent demotion is covered by an integration test.
 
 Not yet implemented from the design above: `Project`, `Service`, incidents, monitoring, integrations, automation, notifications, knowledge, AI, `AuditLog` and `ApiKey`.
+
+---
+
+## Phase 3 as implemented
+
+Migration `20260919090000_projects_services_incidents`.
+
+| Table                | Purpose and key constraints                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Project`            | Unique `(organizationId, slug)` and `(organizationId, id)`. Name 1-100 and slug format enforced by CHECK. Soft-deleted via `archivedAt`.                                                                                                                                                                                                                                                           |
+| `Service`            | Composite FK `(organizationId, projectId)` to `Project`. Unique `(organizationId, projectId, name, environment)`. `healthStatus` defaults to `UNKNOWN` ("not monitored"), set by monitoring in Phase 4.                                                                                                                                                                                            |
+| `Incident`           | Per-organisation `number` (unique with `organizationId`, allocated from `Organization.incidentCounter` in the creating transaction). Optional composite FK `(organizationId, serviceId)` to `Service`. CHECKs: title 1-200, description at most 10 000, `number > 0`, and status/timestamp agreement (`RESOLVED` exactly when `resolvedAt` is set; `CANCELLED` exactly when `cancelledAt` is set). |
+| `IncidentEvent`      | The timeline. Composite FK to `Incident`. **Append-only: database triggers reject UPDATE, DELETE and TRUNCATE.** Actor is typed (`USER`, `SYSTEM`, `AUTOMATION`, `AI`); `data` is JSON.                                                                                                                                                                                                            |
+| `IncidentComment`    | Composite FK to `Incident`; body 1-5000 (CHECK). Comments are immutable (no edit or delete API).                                                                                                                                                                                                                                                                                                   |
+| `IncidentAssignment` | Composite FK to `Incident`. Ending an assignment sets `unassignedAt` (history kept). A **partial unique index** allows one active row per `(incidentId, userId)`.                                                                                                                                                                                                                                  |
+| `IncidentTag`        | Composite primary key `(incidentId, tag)`; tag format enforced by CHECK.                                                                                                                                                                                                                                                                                                                           |
+
+### How tenant isolation is enforced by the database
+
+Every child references its parent through a composite foreign key `(organizationId, parentId)` that points at the parent's `(organizationId, id)` unique key. A row therefore cannot reference a parent belonging to another organisation, no matter what the application does. This is tested by inserting cross-tenant rows with raw SQL, bypassing the application, and asserting PostgreSQL refuses them. Deleting an incident that has history is refused (`ON DELETE RESTRICT`); incidents are never hard-deleted.
+
+**Row Level Security is deliberately not enabled.** In development, CI and Docker Compose the application connects as the bootstrap superuser (`POSTGRES_USER`), and PostgreSQL superusers bypass RLS, so policies would look protective while enforcing nothing. RLS needs a separate non-superuser application role plus per-transaction session variables; it is planned as part of Phase 10 hardening (see ADR-010).
+
+### Incident numbering
+
+`Organization.incidentCounter` is incremented with a single atomic `UPDATE` inside the incident-creation transaction. The row lock serialises concurrent creation, and a rollback also rolls the counter back, so numbers are gap-free and never reused. A test creates eight incidents concurrently and asserts `1..8`.
+
+Not yet implemented from the design above: `MonitoringCheck`/`MonitoringResult`, `Deployment`, `GitHubIntegration`, `WebhookEvent`, automation, `Notification`, knowledge, `AIInvestigation`, `AuditLog` and `ApiKey`.

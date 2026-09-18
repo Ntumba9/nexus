@@ -351,7 +351,7 @@ describe.skipIf(!HAS_INFRA)(
         await rejects(
           t.prisma
             .$executeRaw`INSERT INTO "Incident" ("organizationId", "number", "title", "severity", "updatedAt") VALUES (${a.orgId}::uuid, ${a.incidentNumber}, 'dup', 'SEV3', now())`,
-          /unique/i,
+          /23505/, // PostgreSQL unique_violation
         );
       });
 
@@ -364,7 +364,7 @@ describe.skipIf(!HAS_INFRA)(
           t.prisma
             .$executeRaw`INSERT INTO "IncidentAssignment" ("organizationId", "incidentId", "userId", "assignedById")
           VALUES (${a.orgId}::uuid, ${a.incidentId}::uuid, ${a.user.id}::uuid, ${a.user.id}::uuid)`,
-          /IncidentAssignment_active_unique|unique/i,
+          /23505/, // the partial unique index: one ACTIVE assignment per user per incident
         );
         await t.prisma
           .$executeRaw`UPDATE "IncidentAssignment" SET "unassignedAt" = now() WHERE "incidentId" = ${a.incidentId}::uuid AND "userId" = ${a.user.id}::uuid`;

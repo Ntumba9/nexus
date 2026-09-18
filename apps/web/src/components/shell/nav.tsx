@@ -16,9 +16,9 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: 'Overview', path: '' },
-  { label: 'Incidents', soon: 'Phase 3' },
-  { label: 'Services', soon: 'Phase 3' },
-  { label: 'Projects', soon: 'Phase 3' },
+  { label: 'Incidents', path: '/incidents' },
+  { label: 'Services', path: '/services' },
+  { label: 'Projects', path: '/projects' },
   { label: 'Deployments', soon: 'Phase 5' },
   { label: 'Automations', soon: 'Phase 6', permission: 'automation.manage' },
   { label: 'Knowledge', soon: 'Phase 8' },
