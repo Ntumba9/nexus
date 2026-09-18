@@ -22,7 +22,8 @@
     "db:migrate:dev": "pnpm --filter @nexus/database migrate:dev",
     "db:migrate:deploy": "pnpm --filter @nexus/database migrate:deploy",
     "clean": "pnpm -r exec node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "env:check": "pnpm --filter @nexus/config build && node scripts/check-env.mjs"
+    "env:check": "pnpm --filter @nexus/config build && node scripts/check-env.mjs",
+    "test:e2e": "pnpm --filter \"./packages/*\" build && pnpm build && pnpm --filter @nexus/e2e e2e"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

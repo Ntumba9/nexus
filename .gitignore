@@ -8,3 +8,5 @@ coverage
 !.env.example
 .DS_Store
 next-env.d.ts
+playwright-report
+test-results

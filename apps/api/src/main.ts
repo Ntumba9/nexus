@@ -1,26 +1,27 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiEnvSchema, loadDotEnv, loadEnv } from '@nexus/config';
-import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { configureApp } from './app.setup';
 
 async function bootstrap(): Promise<void> {
   loadDotEnv();
   // Validate configuration before anything else so misconfiguration fails fast with a clear message.
   const env = loadEnv(apiEnvSchema);
 
-  const app = await NestFactory.create(AppModule);
-  app.use(helmet());
-  app.enableCors({ origin: env.WEB_ORIGIN, credentials: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  configureApp(app, env);
   app.enableShutdownHooks();
 
   if (env.SWAGGER_ENABLED) {
     const config = new DocumentBuilder()
       .setTitle('NEXUS API')
       .setDescription('Developer operations and incident intelligence platform')
-      .setVersion('0.1.0')
+      .setVersion('0.2.0')
+      .addCookieAuth('nexus_session')
       .build();
     SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
   }

@@ -36,6 +36,22 @@ export const apiEnvSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+  /** Number of reverse-proxy hops to trust for client IP (X-Forwarded-For). 0 = trust none. */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+  /** Set the Secure flag on the session cookie. Defaults to true in production. */
+  COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  /** Idle session lifetime (sliding), in hours. */
+  SESSION_IDLE_TTL_HOURS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 90)
+    .default(24 * 7),
+  /** Hard cap on session lifetime regardless of activity, in days. */
+  SESSION_ABSOLUTE_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  /** Auth rate limit: attempts per window per account. Per-IP limits are derived from this. */
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100000).default(10),
+  AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86400).default(900),
   /**
    * Optional: AI features are disabled when unset (the rest of the product must keep working).
    * Read only from the environment; never logged, never sent to the browser.

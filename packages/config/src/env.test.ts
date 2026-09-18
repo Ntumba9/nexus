@@ -45,3 +45,26 @@ describe('loadEnv', () => {
     expect(loadEnv(apiEnvSchema, { ...valid, ANTHROPIC_API_KEY: 'k' }).ANTHROPIC_API_KEY).toBe('k');
   });
 });
+
+describe('session and rate-limit settings', () => {
+  const base = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    REDIS_URL: 'redis://localhost:6379',
+  };
+
+  it('has safe defaults', () => {
+    const env = loadEnv(apiEnvSchema, base);
+    expect(env.TRUST_PROXY_HOPS).toBe(0);
+    expect(env.SESSION_IDLE_TTL_HOURS).toBe(168);
+    expect(env.SESSION_ABSOLUTE_TTL_DAYS).toBe(30);
+    expect(env.AUTH_RATE_LIMIT_MAX).toBe(10);
+    expect(env.COOKIE_SECURE).toBeUndefined();
+  });
+
+  it('rejects nonsensical values', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...base, AUTH_RATE_LIMIT_MAX: '0' })).toThrow(
+      /AUTH_RATE_LIMIT_MAX/,
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...base, COOKIE_SECURE: 'yes' })).toThrow(/COOKIE_SECURE/);
+  });
+});

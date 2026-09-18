@@ -6,8 +6,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { ReadinessReport } from '@nexus/shared';
+import { Public } from '../rbac/decorators';
 import { HealthService } from './health.service';
 
+@Public()
 @ApiTags('health')
 @Controller('health')
 export class HealthController {

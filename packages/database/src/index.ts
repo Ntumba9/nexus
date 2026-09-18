@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
-export { PrismaClient } from '@prisma/client';
+export { Prisma, PrismaClient } from '@prisma/client';
 
 /** Create a Prisma client for an explicit connection string (never read from the environment here). */
 export function createPrismaClient(databaseUrl: string): PrismaClient {

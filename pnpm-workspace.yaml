@@ -2,6 +2,7 @@ packages:
   - apps/*
   - workers
   - packages/*
+  - tests/*
 
 # pnpm 10 blocks dependency install scripts by default. Only these are allowed:
 onlyBuiltDependencies:

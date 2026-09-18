@@ -63,6 +63,12 @@ services:
       API_PORT: 3001
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+      # The web container proxies browser requests to the API: trust exactly one hop for client IPs.
+      TRUST_PROXY_HOPS: 1
+      # NODE_ENV=production defaults cookies to Secure, which needs HTTPS. Set true behind TLS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-900}
     ports:
       - '127.0.0.1:${API_PORT:-3001}:3001'
     depends_on:
