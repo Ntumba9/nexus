@@ -52,6 +52,9 @@ model User {
   assignedIncidents IncidentAssignment[] @relation("AssignedUser")
   assignmentsMade   IncidentAssignment[] @relation("AssignedBy")
   deploymentLinks   IncidentDeployment[]
+  rulesCreated      AutomationRule[]     @relation("RuleCreatedBy")
+  webhooksCreated   OutboundWebhook[]    @relation("WebhookCreatedBy")
+  auditEntries      AuditLog[]           @relation("AuditActor")
 }
 
 model Organization {
@@ -73,6 +76,13 @@ model Organization {
   githubIntegrations GitHubIntegration[]
   webhookEvents      WebhookEvent[]
   deployments        Deployment[]
+
+  domainEvents         DomainEvent[]
+  automationRules      AutomationRule[]
+  automationExecutions AutomationExecution[]
+  notifications        Notification[]
+  outboundWebhooks     OutboundWebhook[]
+  auditLogs            AuditLog[]
 }
 
 model OrganizationMember {
@@ -84,6 +94,8 @@ model OrganizationMember {
   updatedAt      DateTime     @updatedAt @db.Timestamptz(6)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  notifications Notification[]
 
   @@unique([organizationId, userId])
   @@unique([organizationId, id])
@@ -165,6 +177,7 @@ enum IncidentEventType {
   COMMENT_ADDED
   MONITORING_SIGNAL
   DEPLOYMENT_LINKED
+  AUTOMATION_EXECUTED
 }
 
 enum ActorType {
@@ -504,4 +517,162 @@ model IncidentDeployment {
 
   @@id([incidentId, deploymentId])
   @@index([deploymentId])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 6: automation and notifications (ADR-013).
+//
+// The flow is: a change writes a DomainEvent in the SAME transaction (a transactional outbox), a
+// worker matches rules against it, and each match becomes one AutomationExecution whose actions
+// produce Notifications, outbound webhook calls or incidents. Configuration and consequential
+// automation effects are recorded in the append-only AuditLog.
+// ---------------------------------------------------------------------------------------------
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
+/// Trigger names ("incident.created", ...) are stored as text: the API, worker and UI all use the
+/// same strings from @nexus/shared, and a CHECK constraint keeps the column honest.
+///
+/// The outbox: one row per thing that happened, written in the transaction that made it happen, so
+/// an event can never be lost (or invented) if a process dies between the change and the enqueue.
+model DomainEvent {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String                @db.Uuid
+  type                String
+  /// The record the event is about (incident, service or deployment id); used for cooldowns.
+  subjectId           String?               @db.Uuid
+  /// Flat scalar facts that conditions and templates may read. Never a raw record.
+  facts               Json
+  /// Set when the event was itself caused by an automation execution. Such events never trigger
+  /// automation (the loop guard).
+  causedByExecutionId String?               @db.Uuid
+  occurredAt          DateTime              @default(now()) @db.Timestamptz(6)
+  /// Set by the dispatcher once rules have been evaluated. NULL means "still to do".
+  dispatchedAt        DateTime?             @db.Timestamptz(6)
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  executions          AutomationExecution[]
+
+  @@unique([organizationId, id])
+  @@index([occurredAt])
+}
+
+model AutomationRule {
+  id              String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String                @db.Uuid
+  name            String
+  trigger         String
+  /// Validated by @nexus/shared (createRuleSchema) on every write and read back through it.
+  conditions      Json                  @default("[]")
+  actions         Json
+  enabled         Boolean               @default(true)
+  cooldownSeconds Int                   @default(300)
+  createdById     String?               @db.Uuid
+  createdAt       DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime              @updatedAt @db.Timestamptz(6)
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?                 @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  executions      AutomationExecution[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, trigger, enabled])
+}
+
+/// One rule matching one event. Unique per (rule, event): a redelivered or re-dispatched event can
+/// never run a rule twice.
+model AutomationExecution {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @db.Uuid
+  ruleId         String          @db.Uuid
+  eventId        String          @db.Uuid
+  /// Denormalised so history stays readable and filterable without joining the outbox.
+  eventType      String
+  subjectId      String?         @db.Uuid
+  status         ExecutionStatus @default(PENDING)
+  skipReason     String?
+  /// One entry per action: { index, type, status, detail }. Never a secret or a payload.
+  results        Json            @default("[]")
+  attempts       Int             @default(0)
+  startedAt      DateTime?       @db.Timestamptz(6)
+  finishedAt     DateTime?       @db.Timestamptz(6)
+  createdAt      DateTime        @default(now()) @db.Timestamptz(6)
+  rule           AutomationRule  @relation(fields: [organizationId, ruleId], references: [organizationId, id], onDelete: Cascade, onUpdate: Restrict)
+  event          DomainEvent     @relation(fields: [organizationId, eventId], references: [organizationId, id], onDelete: Cascade, onUpdate: Restrict)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, eventId])
+  @@unique([organizationId, id])
+  @@index([organizationId, ruleId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+/// A per-recipient in-app notification. The composite foreign key to OrganizationMember means a
+/// notification can only ever exist for a member of its own organisation.
+model Notification {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String             @db.Uuid
+  userId         String             @db.Uuid
+  type           String
+  title          String
+  body           String             @default("")
+  /// An in-app path built by the server from ids ("/orgs/…"); never user input.
+  link           String?
+  readAt         DateTime?          @db.Timestamptz(6)
+  /// Which execution and action produced it: unique per recipient, so a retried job cannot duplicate.
+  executionId    String?            @db.Uuid
+  actionIndex    Int?
+  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
+  member         OrganizationMember @relation(fields: [organizationId, userId], references: [organizationId, userId], onDelete: Cascade, onUpdate: Restrict)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, actionIndex, userId])
+  @@index([organizationId, userId, readAt, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
+
+/// A destination for the "call a webhook" action. The signing secret is AES-256-GCM encrypted with
+/// the row id as authenticated data, shown once at creation and never returned again.
+model OutboundWebhook {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String       @db.Uuid
+  name            String
+  url             String
+  secretEncrypted String
+  enabled         Boolean      @default(true)
+  createdById     String?      @db.Uuid
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(6)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?        @relation("WebhookCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, enabled])
+}
+
+/// Append-only. UPDATE, DELETE and TRUNCATE are rejected by database triggers, so neither an
+/// application bug nor a console session can rewrite it. Metadata is redacted before it is written.
+model AuditLog {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @db.Uuid
+  actorType      ActorType
+  actorId        String?      @db.Uuid
+  /// A snapshot of who acted, so the entry stays meaningful if the user is later renamed.
+  actorLabel     String
+  action         String
+  resourceType   String
+  resourceId     String?
+  metadata       Json         @default("{}")
+  requestId      String?
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor          User?        @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, action])
 }
