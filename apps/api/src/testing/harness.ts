@@ -48,6 +48,10 @@ export async function createTestApp(
   const env = loadEnv(apiEnvSchema);
   configureApp(app, env);
   await app.init();
+  // Listen ONCE, for the life of the app. If the server is not listening, supertest starts a temporary
+  // listener per request and closes it when that request finishes, which cuts off any request still in
+  // flight: tests that fire several requests at once (Promise.all) failed intermittently with ECONNRESET.
+  await app.listen(0);
   return {
     app,
     env,
