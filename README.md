@@ -128,12 +128,26 @@ workers. Never commit `.env`.
 
 ### Full stack in Docker
 
+Run the prebuilt images published to GitHub Container Registry (no local build):
+
+```bash
+docker compose --profile app pull
+docker compose --profile app up --no-build
+```
+
+Or build them from source instead:
+
 ```bash
 docker compose --profile app up --build
 ```
 
 This adds a one-shot `migrate` service, then `api`, `web` and `worker`. Without `--profile app`
 only PostgreSQL and Redis start.
+
+Images are `ghcr.io/ntumba9/nexus-{api,web,worker}`, published by CI for every green commit on
+`main`, tagged `latest` and with the full commit SHA. Set `NEXUS_IMAGE_TAG` in `.env` to pin a
+version, or `NEXUS_IMAGE_REGISTRY` to use a fork. If the packages are private,
+`docker login ghcr.io` first with a token that has `read:packages`.
 
 ## Environment variables
 

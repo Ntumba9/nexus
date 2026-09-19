@@ -37,6 +37,7 @@ services:
   # One-shot job: applies Prisma migrations, then exits. API and workers wait for it.
   migrate:
     profiles: [app]
+    image: ${NEXUS_IMAGE_REGISTRY:-ghcr.io/ntumba9}/nexus-api:${NEXUS_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -50,6 +51,7 @@ services:
 
   api:
     profiles: [app]
+    image: ${NEXUS_IMAGE_REGISTRY:-ghcr.io/ntumba9}/nexus-api:${NEXUS_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -92,6 +94,7 @@ services:
 
   web:
     profiles: [app]
+    image: ${NEXUS_IMAGE_REGISTRY:-ghcr.io/ntumba9}/nexus-web:${NEXUS_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -119,6 +122,7 @@ services:
 
   worker:
     profiles: [app]
+    image: ${NEXUS_IMAGE_REGISTRY:-ghcr.io/ntumba9}/nexus-worker:${NEXUS_IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: workers/Dockerfile
