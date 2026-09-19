@@ -55,7 +55,8 @@ test('a failing service is detected, an incident is opened automatically, and re
     })
   ).json();
 
-  // Before monitoring exists the dashboard says so honestly.
+  // Before monitoring exists the dashboard says so honestly (reload: the service was created via the API).
+  await page.reload();
   await expect(page.getByText('Not monitored').first()).toBeVisible();
 
   // Add a health check through the UI.
