@@ -1,4 +1,5 @@
 export * from './auth';
+export * from './automation';
 export * from './dashboard';
 export * from './github';
 export * from './health';

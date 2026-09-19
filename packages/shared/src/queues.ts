@@ -13,15 +13,19 @@ export const QUEUE_NAMES = {
   maintenance: 'maintenance',
   /** One job per stored GitHub webhook delivery. */
   webhookProcessing: 'webhook-processing',
+  /** One job per automation execution (a rule matched an event). */
+  automation: 'automation',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 export const SYSTEM_JOBS = { ping: 'ping' } as const;
 export const HEALTH_CHECK_JOBS = { run: 'run' } as const;
 export const WEBHOOK_JOBS = { process: 'process' } as const;
+export const AUTOMATION_JOBS = { execute: 'execute' } as const;
 export const MAINTENANCE_JOBS = {
   cleanupResults: 'cleanup-results',
   cleanupWebhooks: 'cleanup-webhooks',
+  cleanupAutomation: 'cleanup-automation',
 } as const;
 
 /**
