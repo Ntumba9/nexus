@@ -13,6 +13,18 @@ const urlWithProtocol = (protocols: string[], label: string) =>
     { message: `must be a valid ${label} URL` },
   );
 
+/**
+ * Base64 of exactly 32 random bytes (`openssl rand -base64 32`). Used to encrypt integration secrets
+ * at rest. Optional: integrations are disabled when unset, and the rest of the product keeps working.
+ */
+const encryptionKey = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() || undefined)
+  .refine((value) => value === undefined || Buffer.from(value, 'base64').length === 32, {
+    message: 'must be base64 of exactly 32 bytes (generate with: openssl rand -base64 32)',
+  });
+
 const port = z.coerce.number().int().min(1).max(65535);
 
 const baseEnv = {
@@ -63,6 +75,7 @@ export const apiEnvSchema = z.object({
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100000).default(10),
   AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86400).default(900),
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
+  INTEGRATION_ENCRYPTION_KEY: encryptionKey,
   /**
    * Optional: AI features are disabled when unset (the rest of the product must keep working).
    * Read only from the environment; never logged, never sent to the browser.
@@ -83,6 +96,8 @@ export const workerEnvSchema = z.object({
   MONITORING_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(5000),
   /** Monitoring results older than this are deleted by the maintenance job. */
   MONITORING_RESULT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  /** Stored webhook deliveries (which include the payload) older than this are deleted. */
+  WEBHOOK_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   WORKER_HEALTH_HOST: z.string().min(1).default('0.0.0.0'),
   WORKER_HEALTH_PORT: port.default(3002),

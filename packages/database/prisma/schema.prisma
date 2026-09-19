@@ -51,6 +51,7 @@ model User {
   incidentComments  IncidentComment[]
   assignedIncidents IncidentAssignment[] @relation("AssignedUser")
   assignmentsMade   IncidentAssignment[] @relation("AssignedBy")
+  deploymentLinks   IncidentDeployment[]
 }
 
 model Organization {
@@ -68,6 +69,10 @@ model Organization {
   services  Service[]
   incidents Incident[]
   checks    MonitoringCheck[]
+
+  githubIntegrations GitHubIntegration[]
+  webhookEvents      WebhookEvent[]
+  deployments        Deployment[]
 }
 
 model OrganizationMember {
@@ -159,6 +164,7 @@ enum IncidentEventType {
   UNASSIGNED
   COMMENT_ADDED
   MONITORING_SIGNAL
+  DEPLOYMENT_LINKED
 }
 
 enum ActorType {
@@ -169,39 +175,43 @@ enum ActorType {
 }
 
 model Project {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String       @db.Uuid
-  name           String
-  slug           String
-  description    String       @default("")
-  archivedAt     DateTime?    @db.Timestamptz(6)
-  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime     @updatedAt @db.Timestamptz(6)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  services       Service[]
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String              @db.Uuid
+  name               String
+  slug               String
+  description        String              @default("")
+  archivedAt         DateTime?           @db.Timestamptz(6)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  services           Service[]
+  githubIntegrations GitHubIntegration[]
+  deployments        Deployment[]
 
   @@unique([organizationId, slug])
   @@unique([organizationId, id])
 }
 
 model Service {
-  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId  String             @db.Uuid
-  projectId       String             @db.Uuid
-  name            String
-  environment     ServiceEnvironment @default(PRODUCTION)
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String              @db.Uuid
+  projectId          String              @db.Uuid
+  name               String
+  environment        ServiceEnvironment  @default(PRODUCTION)
   /// Aggregated from the service's checks by the monitoring worker. UNKNOWN means "not monitored",
   /// never "healthy".
-  healthStatus    ServiceHealth      @default(UNKNOWN)
-  healthChangedAt DateTime?          @db.Timestamptz(6)
-  description     String             @default("")
-  archivedAt      DateTime?          @db.Timestamptz(6)
-  createdAt       DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime           @updatedAt @db.Timestamptz(6)
-  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project         Project            @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  incidents       Incident[]
-  checks          MonitoringCheck[]
+  healthStatus       ServiceHealth       @default(UNKNOWN)
+  healthChangedAt    DateTime?           @db.Timestamptz(6)
+  description        String              @default("")
+  archivedAt         DateTime?           @db.Timestamptz(6)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project            Project             @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  incidents          Incident[]
+  checks             MonitoringCheck[]
+  githubIntegrations GitHubIntegration[]
+  deployments        Deployment[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, projectId, name, environment])
@@ -233,6 +243,7 @@ model Incident {
   comments       IncidentComment[]
   assignments    IncidentAssignment[]
   tags           IncidentTag[]
+  deployments    IncidentDeployment[]
 
   @@unique([organizationId, number])
   @@unique([organizationId, id])
@@ -369,4 +380,128 @@ model MonitoringResult {
   @@unique([checkId, scheduledFor])
   @@index([checkId, checkedAt(sort: Desc)])
   @@index([checkedAt])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 5: GitHub integration. Deployments arrive as signed webhooks (ADR-012). Every table keeps
+// the composite tenant-safe foreign keys used above.
+// ---------------------------------------------------------------------------------------------
+
+enum IntegrationStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum DeploymentStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCESS
+  FAILURE
+  INACTIVE
+}
+
+enum DeploymentRelation {
+  SUSPECTED
+  CONFIRMED
+}
+
+/// One GitHub repository delivering webhooks into one project (and optionally one service).
+/// Removing an integration disables it; history is kept. A partial unique index (see the migration)
+/// allows one ACTIVE integration per repository per organisation.
+model GitHubIntegration {
+  id                     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String            @db.Uuid
+  projectId              String            @db.Uuid
+  serviceId              String?           @db.Uuid
+  repoFullName           String
+  /// AES-256-GCM, bound to this row's id. Never returned by the API after creation.
+  webhookSecretEncrypted String
+  status                 IntegrationStatus @default(ACTIVE)
+  lastEventAt            DateTime?         @db.Timestamptz(6)
+  createdAt              DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime          @updatedAt @db.Timestamptz(6)
+  organization           Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project                Project           @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  service                Service?          @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  events                 WebhookEvent[]
+  deployments            Deployment[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, projectId])
+}
+
+/// A signature-verified webhook delivery. Deliveries with a bad signature are never stored.
+model WebhookEvent {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String             @db.Uuid
+  integrationId  String             @db.Uuid
+  /// GitHub's X-GitHub-Delivery id; unique per integration so redelivery is recognised.
+  deliveryId     String
+  eventType      String
+  payload        Json
+  status         WebhookEventStatus @default(RECEIVED)
+  error          String?
+  receivedAt     DateTime           @default(now()) @db.Timestamptz(6)
+  processedAt    DateTime?          @db.Timestamptz(6)
+  integration    GitHubIntegration  @relation(fields: [organizationId, integrationId], references: [organizationId, id], onDelete: Cascade, onUpdate: Restrict)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, deliveryId])
+  @@unique([organizationId, id])
+  @@index([receivedAt])
+}
+
+model Deployment {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String               @db.Uuid
+  projectId       String               @db.Uuid
+  serviceId       String?              @db.Uuid
+  integrationId   String               @db.Uuid
+  /// GitHub's deployment id: unique per integration, so status updates upsert one row.
+  externalId      String
+  environment     String
+  ref             String
+  commitSha       String
+  status          DeploymentStatus
+  author          String?
+  description     String?
+  startedAt       DateTime             @db.Timestamptz(6)
+  /// When the deployment first reported SUCCESS; null until then.
+  deployedAt      DateTime?            @db.Timestamptz(6)
+  /// Timestamp of the newest status applied; older events arriving late are ignored.
+  statusUpdatedAt DateTime             @db.Timestamptz(6)
+  createdAt       DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @db.Timestamptz(6)
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project              @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  service         Service?             @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  integration     GitHubIntegration    @relation(fields: [organizationId, integrationId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  incidents       IncidentDeployment[]
+
+  @@unique([integrationId, externalId])
+  @@unique([organizationId, id])
+  @@index([organizationId, startedAt(sort: Desc)])
+  @@index([organizationId, serviceId, deployedAt(sort: Desc)])
+}
+
+model IncidentDeployment {
+  organizationId String             @db.Uuid
+  incidentId     String             @db.Uuid
+  deploymentId   String             @db.Uuid
+  relation       DeploymentRelation
+  linkedById     String?            @db.Uuid
+  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
+  incident       Incident           @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  deployment     Deployment         @relation(fields: [organizationId, deploymentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  linkedBy       User?              @relation(fields: [linkedById], references: [id], onDelete: Restrict)
+
+  @@id([incidentId, deploymentId])
+  @@index([deploymentId])
 }

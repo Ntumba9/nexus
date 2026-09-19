@@ -12,6 +12,10 @@
     "./net-safety": {
       "types": "./dist/net-safety.d.ts",
       "default": "./dist/net-safety.js"
+    },
+    "./webhook-security": {
+      "types": "./dist/webhook-security.d.ts",
+      "default": "./dist/webhook-security.js"
     }
   },
   "scripts": {

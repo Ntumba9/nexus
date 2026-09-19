@@ -9,6 +9,12 @@ import type { AppRequest } from './common/request-context';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/**
+ * Machine-to-machine endpoints authenticated by a request signature instead of a session cookie.
+ * They are not browser-driven, so they carry no Origin header and are exempt from the CSRF check.
+ */
+const SIGNED_WEBHOOK_PREFIX = '/api/v1/webhooks/';
+
 /** Attach a correlation id to every request and echo it back to the client. */
 function requestId(request: AppRequest, response: Response, next: NextFunction): void {
   request.id = randomUUID();
@@ -25,6 +31,7 @@ function originCheck(allowedOrigin: string) {
   const allowed = new URL(allowedOrigin).origin;
   return (request: AppRequest, response: Response, next: NextFunction): void => {
     if (SAFE_METHODS.has(request.method)) return next();
+    if (request.path.startsWith(SIGNED_WEBHOOK_PREFIX)) return next();
     if (request.headers.origin !== allowed) {
       // Raw Express middleware sits outside Nest's exception filters, so reply directly.
       const error = ApiError.forbidden('CSRF_ORIGIN_MISMATCH', 'Request origin is not allowed');

@@ -44,7 +44,7 @@ export async function createTestApp(
     imports: [AppModule],
     controllers: options.controllers ?? [],
   }).compile();
-  const app = moduleRef.createNestApplication<NestExpressApplication>();
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true });
   const env = loadEnv(apiEnvSchema);
   configureApp(app, env);
   await app.init();

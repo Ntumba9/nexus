@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
+import { GitHubModule } from './github/github.module';
 import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
@@ -15,6 +16,7 @@ import { ProjectsModule } from './projects/projects.module';
     ProjectsModule,
     IncidentsModule,
     MonitoringModule,
+    GitHubModule,
     HealthModule,
   ],
 })

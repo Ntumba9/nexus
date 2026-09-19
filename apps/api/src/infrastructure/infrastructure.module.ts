@@ -1,8 +1,10 @@
 import { Global, Inject, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { apiEnvSchema, loadEnv, type ApiEnv } from '@nexus/config';
 import { createPrismaClient, type PrismaClient } from '@nexus/database';
+import { QUEUE_NAMES } from '@nexus/shared';
+import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { ENV, PRISMA, REDIS } from './tokens';
+import { ENV, PRISMA, REDIS, WEBHOOK_QUEUE } from './tokens';
 
 const logger = new Logger('Infrastructure');
 const REDIS_STARTUP_TIMEOUT_MS = 5000;
@@ -55,16 +57,33 @@ function waitUntilReady(redis: Redis, timeoutMs: number): Promise<void> {
         return redis;
       },
     },
+    {
+      provide: WEBHOOK_QUEUE,
+      inject: [ENV],
+      useFactory: (env: ApiEnv): Queue => {
+        // Its own connection: BullMQ requires maxRetriesPerRequest=null, unlike the shared client.
+        const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+        connection.on('error', (error: Error) =>
+          logger.warn(`Queue Redis error: ${error.message}`),
+        );
+        return new Queue(QUEUE_NAMES.webhookProcessing, { connection });
+      },
+    },
   ],
-  exports: [ENV, PRISMA, REDIS],
+  exports: [ENV, PRISMA, REDIS, WEBHOOK_QUEUE],
 })
 export class InfrastructureModule implements OnApplicationShutdown {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(REDIS) private readonly redis: Redis,
+    @Inject(WEBHOOK_QUEUE) private readonly webhookQueue: Queue,
   ) {}
 
   async onApplicationShutdown(): Promise<void> {
-    await Promise.allSettled([this.prisma.$disconnect(), this.redis.quit()]);
+    await Promise.allSettled([
+      this.webhookQueue.close(),
+      this.prisma.$disconnect(),
+      this.redis.quit(),
+    ]);
   }
 }

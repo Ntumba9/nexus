@@ -12,7 +12,9 @@ async function bootstrap(): Promise<void> {
   // Validate configuration before anything else so misconfiguration fails fast with a clear message.
   const env = loadEnv(apiEnvSchema);
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true, // webhook signatures are computed over the exact bytes received
+  });
   configureApp(app, env);
   app.enableShutdownHooks();
 

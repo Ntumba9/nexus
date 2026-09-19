@@ -7,7 +7,7 @@ import { startHealthServer } from './health-server';
 import { createLogger } from './logger';
 import { startDispatcher } from './monitoring/dispatcher';
 import { createHttpChecker } from './monitoring/http-checker';
-import { healthCheckWorker, maintenanceWorker } from './processors/monitoring';
+import { healthCheckWorker, maintenanceWorker, webhookWorker } from './processors/monitoring';
 import { systemWorker } from './processors/system';
 import { createBullConnection } from './redis';
 
@@ -38,10 +38,16 @@ async function main(): Promise<void> {
       logger,
     ),
     createWorker(
-      maintenanceWorker({ prisma, retentionDays: env.MONITORING_RESULT_RETENTION_DAYS, logger }),
+      maintenanceWorker({
+        prisma,
+        retentionDays: env.MONITORING_RESULT_RETENTION_DAYS,
+        webhookRetentionDays: env.WEBHOOK_RETENTION_DAYS,
+        logger,
+      }),
       connection,
       logger,
     ),
+    createWorker(webhookWorker({ prisma, logger }, env.WORKER_CONCURRENCY), connection, logger),
   ];
 
   const healthCheckQueue = new Queue(QUEUE_NAMES.healthCheck, { connection });
@@ -55,17 +61,24 @@ async function main(): Promise<void> {
     intervalMs: env.MONITORING_DISPATCH_INTERVAL_MS,
   });
 
-  // Hourly retention job. The job id is derived from the hour, so with several workers only one
+  // Hourly retention jobs. The job id is derived from the hour, so with several workers only one
   // job per hour is ever created.
   const scheduleCleanup = () => {
-    const slot = `cleanup-${Math.floor(Date.now() / HOUR_MS)}`;
-    maintenanceQueue
-      .add(MAINTENANCE_JOBS.cleanupResults, { slot }, { ...DEFAULT_JOB_OPTIONS, jobId: slot })
-      .catch((error: unknown) =>
-        logger.error('failed to schedule cleanup', {
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+    const hour = Math.floor(Date.now() / HOUR_MS);
+    for (const [name, prefix] of [
+      [MAINTENANCE_JOBS.cleanupResults, 'cleanup'],
+      [MAINTENANCE_JOBS.cleanupWebhooks, 'cleanup-webhooks'],
+    ] as const) {
+      const slot = `${prefix}-${hour}`;
+      maintenanceQueue
+        .add(name, { slot }, { ...DEFAULT_JOB_OPTIONS, jobId: slot })
+        .catch((error: unknown) =>
+          logger.error('failed to schedule cleanup', {
+            job: name,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+    }
   };
   scheduleCleanup();
   const cleanupTimer = setInterval(scheduleCleanup, HOUR_MS);

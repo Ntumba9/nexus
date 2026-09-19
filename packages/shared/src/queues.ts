@@ -11,12 +11,18 @@ export const QUEUE_NAMES = {
   healthCheck: 'health-check',
   /** Periodic housekeeping (retention). */
   maintenance: 'maintenance',
+  /** One job per stored GitHub webhook delivery. */
+  webhookProcessing: 'webhook-processing',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 export const SYSTEM_JOBS = { ping: 'ping' } as const;
 export const HEALTH_CHECK_JOBS = { run: 'run' } as const;
-export const MAINTENANCE_JOBS = { cleanupResults: 'cleanup-results' } as const;
+export const WEBHOOK_JOBS = { process: 'process' } as const;
+export const MAINTENANCE_JOBS = {
+  cleanupResults: 'cleanup-results',
+  cleanupWebhooks: 'cleanup-webhooks',
+} as const;
 
 /**
  * A scheduled execution of one check. `scheduledFor` identifies the execution slot: together with
