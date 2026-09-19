@@ -12,6 +12,7 @@ import {
   generateWebhookSecret,
   parseEncryptionKey,
 } from '@nexus/shared/webhook-security';
+import { AuditService } from '../audit/audit.service';
 import { ApiError } from '../common/api-error';
 import type { TenantContext } from '../common/request-context';
 import { ENV, PRISMA } from '../infrastructure/tokens';
@@ -46,6 +47,7 @@ export class GitHubIntegrationsService {
 
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(AuditService) private readonly audit: AuditService,
     @Inject(ENV) env: ApiEnv,
   ) {
     this.key = env.INTEGRATION_ENCRYPTION_KEY
@@ -65,6 +67,7 @@ export class GitHubIntegrationsService {
   /** Creates the integration and returns its webhook secret, which is never shown again. */
   async create(
     tenant: TenantContext,
+    requestId: string | undefined,
     input: CreateGitHubIntegrationInput,
   ): Promise<CreatedGitHubIntegrationDto> {
     if (!this.key) {
@@ -96,16 +99,25 @@ export class GitHubIntegrationsService {
     const id = randomUUID();
     const secret = generateWebhookSecret();
     try {
-      const row = await this.prisma.gitHubIntegration.create({
-        data: {
-          id,
-          organizationId: orgId,
-          projectId: input.projectId,
-          serviceId: input.serviceId ?? null,
-          repoFullName: input.repoFullName,
-          webhookSecretEncrypted: encryptSecret(secret, this.key, id),
-        },
-        select,
+      const row = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.gitHubIntegration.create({
+          data: {
+            id,
+            organizationId: orgId,
+            projectId: input.projectId,
+            serviceId: input.serviceId ?? null,
+            repoFullName: input.repoFullName,
+            webhookSecretEncrypted: encryptSecret(secret, this.key!, id),
+          },
+          select,
+        });
+        await this.audit.record(tx, tenant, requestId, {
+          action: 'integration.github.created',
+          resourceType: 'github_integration',
+          resourceId: id,
+          metadata: { repository: input.repoFullName },
+        });
+        return created;
       });
       return { ...toDto(row), webhookSecret: secret };
     } catch (error) {
@@ -120,11 +132,23 @@ export class GitHubIntegrationsService {
   }
 
   /** Disables the integration: deliveries are refused, history is kept, the repository is freed. */
-  async disable(tenant: TenantContext, id: string): Promise<void> {
-    const { count } = await this.prisma.gitHubIntegration.updateMany({
-      where: { id, organizationId: tenant.organizationId, status: 'ACTIVE' },
-      data: { status: 'DISABLED' },
+  async disable(tenant: TenantContext, requestId: string | undefined, id: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gitHubIntegration.findFirst({
+        where: { id, organizationId: tenant.organizationId, status: 'ACTIVE' },
+        select: { repoFullName: true },
+      });
+      if (!existing) throw ApiError.notFound('Integration not found');
+      await tx.gitHubIntegration.updateMany({
+        where: { id, organizationId: tenant.organizationId },
+        data: { status: 'DISABLED' },
+      });
+      await this.audit.record(tx, tenant, requestId, {
+        action: 'integration.github.disabled',
+        resourceType: 'github_integration',
+        resourceId: id,
+        metadata: { repository: existing.repoFullName },
+      });
     });
-    if (count === 0) throw ApiError.notFound('Integration not found');
   }
 }

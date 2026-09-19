@@ -96,6 +96,9 @@ export class Client {
   patch(path: string, body?: unknown, options?: SendOptions): Promise<request.Response> {
     return this.send('patch', path, { ...options, body });
   }
+  put(path: string, body?: unknown, options?: SendOptions): Promise<request.Response> {
+    return this.send('put', path, { ...options, body });
+  }
   delete(path: string, options?: SendOptions): Promise<request.Response> {
     return this.send('delete', path, options);
   }

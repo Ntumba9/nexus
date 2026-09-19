@@ -64,7 +64,7 @@ export class GitHubController {
     @Body(new ZodValidationPipe(createGitHubIntegrationSchema)) body: CreateGitHubIntegrationInput,
     @Req() request: AppRequest,
   ): Promise<CreatedGitHubIntegrationDto> {
-    return this.integrations.create(tenantOf(request), body);
+    return this.integrations.create(tenantOf(request), request.id, body);
   }
 
   @RequirePermission('integrations.manage')
@@ -75,7 +75,7 @@ export class GitHubController {
     @Param('integrationId', idPipe) integrationId: string,
     @Req() request: AppRequest,
   ): Promise<void> {
-    await this.integrations.disable(tenantOf(request), integrationId);
+    await this.integrations.disable(tenantOf(request), request.id, integrationId);
   }
 
   @RequirePermission('projects.read')

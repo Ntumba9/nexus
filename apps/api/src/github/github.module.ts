@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditModule } from '../audit/audit.module';
 import type { Redis } from 'ioredis';
 import { RateLimiter, RedisRateLimitStore } from '../rate-limit/rate-limiter';
 import { RATE_LIMITER } from '../rate-limit/tokens';
@@ -10,6 +11,7 @@ import { GitHubWebhookController } from './github-webhook.controller';
 import { GitHubWebhookService } from './github-webhook.service';
 
 @Module({
+  imports: [AuditModule],
   controllers: [GitHubController, GitHubWebhookController],
   providers: [
     GitHubIntegrationsService,

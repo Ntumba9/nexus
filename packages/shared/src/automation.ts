@@ -656,3 +656,50 @@ export interface AuditLogDto {
   metadata: Record<string, unknown>;
   createdAt: string;
 }
+
+// ---- API contracts: paging, queries and small request bodies -------------------------------------
+
+export interface NotificationPageDto {
+  data: NotificationDto[];
+  /** Unread in-app notifications for the current user in this organization (the bell's badge). */
+  unreadCount: number;
+  nextBefore: string | null;
+}
+
+export interface ExecutionPageDto {
+  data: AutomationExecutionDto[];
+  nextBefore: string | null;
+}
+
+export interface AuditLogPageDto {
+  data: AuditLogDto[];
+  nextBefore: string | null;
+}
+
+const pageQuery = {
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  /** Return entries strictly older than this timestamp (the previous page's `nextBefore`). */
+  before: z.iso.datetime().optional(),
+};
+
+export const pageQuerySchema = z.object(pageQuery);
+export type PageQuery = z.infer<typeof pageQuerySchema>;
+
+export const listNotificationsQuerySchema = z.object({
+  ...pageQuery,
+  unread: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+});
+export type ListNotificationsQuery = z.infer<typeof listNotificationsQuerySchema>;
+
+export const listAuditLogsQuerySchema = z.object({
+  ...pageQuery,
+  action: z.enum(AUDIT_ACTIONS).optional(),
+});
+export type ListAuditLogsQuery = z.infer<typeof listAuditLogsQuerySchema>;
+
+/** Turning a rule on or off, without resending its whole definition. */
+export const setRuleEnabledSchema = z.object({ enabled: z.boolean() }).strict();
+export type SetRuleEnabledInput = z.infer<typeof setRuleEnabledSchema>;
