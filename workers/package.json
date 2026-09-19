@@ -17,10 +17,12 @@
     "@nexus/database": "workspace:*",
     "@nexus/shared": "workspace:*",
     "bullmq": "5.81.5",
-    "ioredis": "5.11.1"
+    "ioredis": "5.11.1",
+    "nodemailer": "10.0.10"
   },
   "devDependencies": {
     "@types/node": "22.20.3",
+    "@types/nodemailer": "8.0.2",
     "tsx": "4.23.13",
     "vitest": "3.2.7"
   }

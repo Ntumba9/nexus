@@ -545,7 +545,8 @@ export const RULE_TEMPLATES: readonly RuleTemplate[] = [
   {
     id: 'failed-production-deployment-incident',
     name: 'Open an incident for failed production deployments',
-    description: 'When a deployment to production fails, open a SEV-3 incident on the service.',
+    description:
+      'When a deployment to production fails, open a SEV-3 incident on the service and tell the team.',
     rule: rule({
       name: 'Failed production deployment',
       trigger: 'deployment.failed',
@@ -557,6 +558,15 @@ export const RULE_TEMPLATES: readonly RuleTemplate[] = [
           description: '{{author}} deployed {{ref}} to {{environment}} and it failed.',
           severity: 'SEV3',
           attachEventService: true,
+        },
+        // An incident opened by an automation never triggers other rules (no automation chains),
+        // so this rule also tells people itself.
+        {
+          type: 'notify',
+          recipients: { roles: ['OWNER', 'ADMIN', 'DEVELOPER'] },
+          channels: ['in_app'],
+          title: 'Incident opened: deployment failed ({{repoFullName}}@{{commitShort}})',
+          body: 'A SEV-3 incident was opened automatically for {{serviceName}}.',
         },
       ],
     }),

@@ -1,14 +1,18 @@
 import { loadDotEnv, loadEnv, workerEnvSchema } from '@nexus/config';
 import { createPrismaClient, pingDatabase } from '@nexus/database';
 import { MAINTENANCE_JOBS, QUEUE_NAMES } from '@nexus/shared';
+import { parseEncryptionKey } from '@nexus/shared/webhook-security';
 import { Queue } from 'bullmq';
 import { DEFAULT_JOB_OPTIONS, createWorker } from './create-worker';
 import { startHealthServer } from './health-server';
 import { createLogger } from './logger';
 import { startDispatcher } from './monitoring/dispatcher';
 import { createHttpChecker } from './monitoring/http-checker';
+import { createActionHandlers } from './automation/actions/handlers';
 import { startAutomationDispatcher } from './automation/dispatcher';
 import { createLogEmailSender } from './automation/email';
+import { createSafePoster } from './automation/safe-post';
+import { createSmtpEmailSender, createSmtpTransporter } from './automation/smtp';
 import {
   automationWorker,
   healthCheckWorker,
@@ -29,7 +33,25 @@ async function main(): Promise<void> {
   const connection = createBullConnection(env.REDIS_URL);
   connection.on('error', (error) => logger.error('redis error', { error: error.message }));
 
-  const email = createLogEmailSender(logger);
+  // Email: `log` needs nothing; `smtp` needs a URL. Fail at startup, not at the first notification.
+  if (env.EMAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
+    throw new Error('EMAIL_TRANSPORT=smtp requires SMTP_URL');
+  }
+  const email =
+    env.EMAIL_TRANSPORT === 'smtp' && env.SMTP_URL
+      ? createSmtpEmailSender({
+          from: env.EMAIL_FROM,
+          transporter: createSmtpTransporter(env.SMTP_URL),
+        })
+      : createLogEmailSender(logger);
+  logger.info('email transport', { transport: env.EMAIL_TRANSPORT });
+
+  const handlers = createActionHandlers({
+    key: env.INTEGRATION_ENCRYPTION_KEY
+      ? parseEncryptionKey(env.INTEGRATION_ENCRYPTION_KEY)
+      : undefined,
+    post: createSafePoster({ allowPrivate: env.MONITORING_ALLOW_PRIVATE_NETWORKS }),
+  });
 
   const check = createHttpChecker({ allowPrivate: env.MONITORING_ALLOW_PRIVATE_NETWORKS });
   if (env.MONITORING_ALLOW_PRIVATE_NETWORKS) {
@@ -61,7 +83,7 @@ async function main(): Promise<void> {
     createWorker(webhookWorker({ prisma, logger }, env.WORKER_CONCURRENCY), connection, logger),
     createWorker(
       automationWorker(
-        { prisma, logger, email, webOrigin: env.WEB_ORIGIN },
+        { prisma, logger, email, webOrigin: env.WEB_ORIGIN, handlers },
         env.WORKER_CONCURRENCY,
       ),
       connection,

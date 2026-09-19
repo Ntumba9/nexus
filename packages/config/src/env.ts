@@ -107,6 +107,8 @@ export const workerEnvSchema = z.object({
     .min(1)
     .max(10_000)
     .default(60),
+  /** The same key the API uses: needed here to decrypt outbound webhook signing secrets. */
+  INTEGRATION_ENCRYPTION_KEY: encryptionKey,
   /** Dispatched domain events and automation executions older than this are deleted. */
   AUTOMATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
   /** Notifications older than this are deleted. */
