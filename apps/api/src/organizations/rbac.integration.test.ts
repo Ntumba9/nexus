@@ -168,7 +168,12 @@ describe.skipIf(!HAS_INFRA)('role-based access control (integration)', () => {
         a.client.patch(`/orgs/${orgX.id}/members/${b.memberId}`, { role: 'VIEWER' }),
         b.client.patch(`/orgs/${orgX.id}/members/${aMember.id}`, { role: 'VIEWER' }),
       ]);
-      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      // Exactly one demotion wins. The loser is refused with 409 if both requests were already past
+      // the permission guard, or 403 if the winner committed first and the loser is no longer an
+      // owner. Which one happens is a matter of timing; the invariant below is what matters.
+      const statuses = results.map((r) => r.status).sort();
+      expect(statuses[0]).toBe(200);
+      expect([403, 409]).toContain(statuses[1]);
       expect(
         await t.prisma.organizationMember.count({
           where: { organizationId: orgX.id, role: 'OWNER' },
