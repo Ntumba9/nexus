@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { roleHasPermission } from '@nexus/shared';
+import { OutboundWebhooksPanel } from '@/components/automation/webhooks-panel';
 import { IntegrationsPanel } from '@/components/github/integrations-panel';
 import { EmptyState } from '@/components/ui/feedback';
 import { getOrganization } from '@/lib/server-api';
@@ -20,7 +21,10 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ o
       </header>
       {/* UI hint only: the API refuses these calls for anyone without the permission. */}
       {roleHasPermission(org.role, 'integrations.manage') ? (
-        <IntegrationsPanel orgId={orgId} />
+        <div className="space-y-8">
+          <IntegrationsPanel orgId={orgId} />
+          <OutboundWebhooksPanel orgId={orgId} />
+        </div>
       ) : (
         <EmptyState
           title="Administrators manage integrations"

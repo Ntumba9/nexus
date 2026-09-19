@@ -415,7 +415,9 @@ function Timeline({ events }: { events: ReturnType<typeof useQuery<IncidentEvent
           <span aria-hidden className="mt-1.5 size-2 shrink-0 rounded-full bg-accent/60" />
           <div className="min-w-0 flex-1 space-y-1">
             <p className="text-sm">
-              <span className="font-medium">{event.actor?.name ?? 'System'}</span>{' '}
+              <span className="font-medium">
+                {event.actor?.name ?? (event.actorType === 'AUTOMATION' ? 'Automation' : 'System')}
+              </span>{' '}
               <span className="text-muted">{describeEvent(event)}</span>
             </p>
             {event.type === 'COMMENT_ADDED' && typeof event.data.body === 'string' && (

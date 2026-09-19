@@ -1,6 +1,9 @@
 import type {
+  AuditLogPageDto,
+  AutomationRuleDto,
   DashboardDto,
   DeploymentDto,
+  ExecutionPageDto,
   GitHubIntegrationDto,
   IncidentDeploymentsDto,
   IncidentDetailDto,
@@ -9,6 +12,8 @@ import type {
   MemberDto,
   MonitoringCheckDto,
   MonitoringResultPageDto,
+  NotificationPageDto,
+  OutboundWebhookDto,
   ProjectDto,
   ServiceDto,
 } from '@nexus/shared';
@@ -27,6 +32,12 @@ export const keys = {
   checks: (orgId: string, serviceId: string) => ['checks', orgId, serviceId] as const,
   results: (orgId: string, checkId: string) => ['check-results', orgId, checkId] as const,
   integrations: (orgId: string) => ['github-integrations', orgId] as const,
+  rules: (orgId: string) => ['automation-rules', orgId] as const,
+  executions: (orgId: string, ruleId: string) => ['automation-executions', orgId, ruleId] as const,
+  webhooks: (orgId: string) => ['outbound-webhooks', orgId] as const,
+  notifications: (orgId: string) => ['notifications', orgId] as const,
+  unread: (orgId: string) => ['notifications-unread', orgId] as const,
+  audit: (orgId: string, action?: string) => ['audit-log', orgId, action ?? 'all'] as const,
   deployments: (orgId: string, serviceId?: string) =>
     ['deployments', orgId, serviceId ?? 'all'] as const,
   incidentDeployments: (orgId: string, id: string) => ['incident-deployments', orgId, id] as const,
@@ -54,6 +65,26 @@ export const fetchers = {
   checks: (orgId: string, serviceId: string) =>
     apiFetch<{ data: MonitoringCheckDto[] }>(`/orgs/${orgId}/services/${serviceId}/checks`).then(
       (r) => r.data,
+    ),
+  rules: (orgId: string) =>
+    apiFetch<{ data: AutomationRuleDto[] }>(`/orgs/${orgId}/automation/rules`).then((r) => r.data),
+  executions: (orgId: string, ruleId: string, before?: string) =>
+    apiFetch<ExecutionPageDto>(
+      `/orgs/${orgId}/automation/rules/${ruleId}/executions?limit=10${before ? `&before=${encodeURIComponent(before)}` : ''}`,
+    ),
+  webhooks: (orgId: string) =>
+    apiFetch<{ data: OutboundWebhookDto[] }>(`/orgs/${orgId}/outbound-webhooks`).then(
+      (r) => r.data,
+    ),
+  notifications: (orgId: string, options: { limit?: number; before?: string } = {}) =>
+    apiFetch<NotificationPageDto>(
+      `/orgs/${orgId}/notifications?limit=${options.limit ?? 20}${options.before ? `&before=${encodeURIComponent(options.before)}` : ''}`,
+    ),
+  unread: (orgId: string) =>
+    apiFetch<{ count: number }>(`/orgs/${orgId}/notifications/unread-count`).then((r) => r.count),
+  audit: (orgId: string, action?: string, before?: string) =>
+    apiFetch<AuditLogPageDto>(
+      `/orgs/${orgId}/audit-logs?limit=25${action ? `&action=${encodeURIComponent(action)}` : ''}${before ? `&before=${encodeURIComponent(before)}` : ''}`,
     ),
   integrations: (orgId: string) =>
     apiFetch<{ data: GitHubIntegrationDto[] }>(`/orgs/${orgId}/integrations/github`).then(

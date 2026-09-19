@@ -20,10 +20,10 @@ const NAV: NavItem[] = [
   { label: 'Services', path: '/services' },
   { label: 'Projects', path: '/projects' },
   { label: 'Deployments', path: '/deployments' },
-  { label: 'Automations', soon: 'Phase 6', permission: 'automation.manage' },
+  { label: 'Automations', path: '/automations', permission: 'automation.manage' },
   { label: 'Knowledge', soon: 'Phase 8' },
   { label: 'Integrations', path: '/integrations', permission: 'integrations.manage' },
-  { label: 'Audit Log', soon: 'Phase 10', permission: 'audit.read' },
+  { label: 'Audit Log', path: '/audit-log', permission: 'audit.read' },
   { label: 'Settings', path: '/settings' },
 ];
 

@@ -9,6 +9,7 @@
   --color-accent: #7c9cff;
   --color-success: #4ade80;
   --color-danger: #f87171;
+  --color-warning: #fbbf24;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 }

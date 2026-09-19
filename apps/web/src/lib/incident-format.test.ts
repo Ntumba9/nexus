@@ -48,6 +48,18 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'MONITORING_SIGNAL', data: {} })).toContain('monitoring change');
   });
 
+  it('describes an automation run on an incident', () => {
+    const run = (status: string) =>
+      describeEvent({
+        type: 'AUTOMATION_EXECUTED',
+        data: { ruleName: 'Critical incident alert', status },
+      });
+    expect(run('SUCCEEDED')).toBe('ran the automation rule “Critical incident alert”');
+    expect(run('PARTIAL')).toBe('ran the automation rule “Critical incident alert” (partly)');
+    expect(run('FAILED')).toBe('ran the automation rule “Critical incident alert” (it failed)');
+    expect(describeEvent({ type: 'AUTOMATION_EXECUTED', data: {} })).toBe('ran an automation rule');
+  });
+
   it('describes linked deployments, as suspected or confirmed', () => {
     const data = { commitSha: 'abcdef1234567', environment: 'production' };
     expect(

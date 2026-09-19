@@ -80,6 +80,15 @@ export function describeEvent(event: Pick<IncidentEventDto, 'type' | 'data'>): s
         ? `confirmed ${what} as the cause`
         : `linked ${what} as a suspected cause`;
     }
+    case 'AUTOMATION_EXECUTED': {
+      const rule =
+        typeof data.ruleName === 'string'
+          ? `the automation rule “${data.ruleName}”`
+          : 'an automation rule';
+      const status =
+        data.status === 'PARTIAL' ? ' (partly)' : data.status === 'FAILED' ? ' (it failed)' : '';
+      return `ran ${rule}${status}`;
+    }
     default:
       return 'made a change';
   }
