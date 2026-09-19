@@ -401,7 +401,7 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
       });
 
       const queue = new RecordingQueue();
-      await dispatchDueChecks(prisma, queue, logger);
+      await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);
 
       expect(queue.forOrg(service.organizationId).map((j) => j.data.checkId)).toEqual([
         due.checkId,
@@ -419,8 +419,8 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
       const service = await seedService(prisma);
       await seedCheck(prisma, service, { nextRunAt: past() });
       const queue = new RecordingQueue();
-      await dispatchDueChecks(prisma, queue, logger);
-      await dispatchDueChecks(prisma, queue, logger);
+      await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);
+      await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);
       expect(queue.forOrg(service.organizationId)).toHaveLength(1);
     });
 
@@ -432,7 +432,11 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
         ),
       );
       const queue = new RecordingQueue();
-      await Promise.all(Array.from({ length: 5 }, () => dispatchDueChecks(prisma, queue, logger)));
+      await Promise.all(
+        Array.from({ length: 5 }, () =>
+          dispatchDueChecks(prisma, queue, logger, 100, service.organizationId),
+        ),
+      );
       const enqueued = queue
         .forOrg(service.organizationId)
         .map((j) => j.data.checkId)
@@ -444,7 +448,7 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
       const service = await seedService(prisma);
       const check = await seedCheck(prisma, service, { nextRunAt: past() });
       const queue = new RecordingQueue();
-      await dispatchDueChecks(prisma, queue, logger);
+      await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);
       const [job] = queue.forOrg(service.organizationId);
       expect(job!.jobId).toMatch(new RegExp(`^hc-${check.checkId}-\\d+$`));
       expect(job!.jobId).not.toContain(':'); // BullMQ forbids ':' in custom ids
@@ -460,7 +464,7 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
       const check = await seedCheck(prisma, service, { nextRunAt: past(), intervalSeconds: 3600 });
       const queue = new RecordingQueue();
       queue.failFor.add(check.checkId);
-      await dispatchDueChecks(prisma, queue, logger);
+      await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);
       expect(queue.forOrg(service.organizationId)).toHaveLength(0);
       expect((await state(check.checkId)).nextRunAt.getTime()).toBeLessThanOrEqual(
         Date.now() + 1000,
@@ -475,7 +479,7 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
         data: { nextRunAt: new Date() },
       });
       const queue = new RecordingQueue();
-      await dispatchDueChecks(prisma, queue, logger);
+      await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);
       expect(queue.forOrg(service.organizationId)).toHaveLength(1);
     });
 
