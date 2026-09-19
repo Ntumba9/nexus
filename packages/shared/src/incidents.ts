@@ -47,6 +47,8 @@ export const INCIDENT_EVENT_TYPES = [
   /** Recorded by monitoring on an incident it created (for example "the service recovered"). */
   'MONITORING_SIGNAL',
   'DEPLOYMENT_LINKED',
+  /** Recorded when an automation rule ran because of this incident. */
+  'AUTOMATION_EXECUTED',
 ] as const;
 export type IncidentEventType = (typeof INCIDENT_EVENT_TYPES)[number];
 

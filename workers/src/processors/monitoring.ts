@@ -1,9 +1,11 @@
 import type { PrismaClient } from '@nexus/database';
 import {
   HEALTH_CHECK_JOBS,
+  AUTOMATION_JOBS,
   MAINTENANCE_JOBS,
   QUEUE_NAMES,
   WEBHOOK_JOBS,
+  automationJobPayloadSchema,
   healthCheckPayloadSchema,
   maintenancePayloadSchema,
   webhookProcessingPayloadSchema,
@@ -18,6 +20,8 @@ import {
   processWebhookEvent,
   type WebhookProcessingOutcome,
 } from '../github/process-webhook';
+import { cleanupOldAutomationData, cleanupOldNotifications } from '../automation/maintenance';
+import { processExecution, type ExecutionOutcome, type ExecutorDeps } from '../automation/executor';
 import { cleanupOldResults, cleanupOldWebhookEvents } from '../monitoring/maintenance';
 
 export function healthCheckWorker(
@@ -40,6 +44,8 @@ export function maintenanceWorker(deps: {
   prisma: PrismaClient;
   retentionDays: number;
   webhookRetentionDays: number;
+  automationRetentionDays: number;
+  notificationRetentionDays: number;
   logger: Logger;
 }): WorkerDefinition<unknown, { deleted: number }> {
   return {
@@ -56,6 +62,17 @@ export function maintenanceWorker(deps: {
         const deleted = await cleanupOldWebhookEvents(deps.prisma, deps.webhookRetentionDays);
         if (deleted > 0) deps.logger.info('deleted old webhook events', { deleted });
         return { deleted };
+      }
+      if (job.name === MAINTENANCE_JOBS.cleanupAutomation) {
+        const events = await cleanupOldAutomationData(deps.prisma, deps.automationRetentionDays);
+        const notifications = await cleanupOldNotifications(
+          deps.prisma,
+          deps.notificationRetentionDays,
+        );
+        if (events + notifications > 0) {
+          deps.logger.info('deleted old automation data', { events, notifications });
+        }
+        return { deleted: events + notifications };
       }
       throw new Error(`Unknown maintenance job: ${job.name}`);
     },
@@ -93,6 +110,24 @@ export function webhookWorker(
         }
         throw error;
       }
+    },
+  };
+}
+
+export function automationWorker(
+  deps: ExecutorDeps,
+  concurrency: number,
+): WorkerDefinition<unknown, ExecutionOutcome> {
+  return {
+    queue: QUEUE_NAMES.automation,
+    concurrency,
+    async process(job: Job) {
+      if (job.name !== AUTOMATION_JOBS.execute) {
+        throw new Error(`Unknown automation job: ${job.name}`);
+      }
+      const payload = automationJobPayloadSchema.parse(job.data);
+      const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      return processExecution(deps, payload, { isFinalAttempt });
     },
   };
 }

@@ -151,6 +151,7 @@ export const conditionSchema = z.object({
   value: z.union([scalar, z.array(scalar).min(1).max(20)]),
 });
 export type Condition = z.infer<typeof conditionSchema>;
+export const conditionListSchema = z.array(conditionSchema);
 
 /**
  * Conditions are AND-combined. A missing fact is not "equal" to anything: `eq` and `in` are false
@@ -273,6 +274,7 @@ export const automationActionSchema = z.discriminatedUnion('type', [
   createIncidentActionSchema,
 ]);
 export type AutomationAction = z.infer<typeof automationActionSchema>;
+export const automationActionListSchema = z.array(automationActionSchema);
 export type NotifyAction = z.infer<typeof notifyActionSchema>;
 export type CreateIncidentAction = z.infer<typeof createIncidentActionSchema>;
 
@@ -396,16 +398,30 @@ export const EXECUTION_STATUSES = [
 export type ExecutionStatus = (typeof EXECUTION_STATUSES)[number];
 
 /** Why an execution was recorded as SKIPPED instead of running. */
-export const SKIP_REASONS = ['cooldown', 'rate_limited'] as const;
+export const SKIP_REASONS = ['cooldown', 'rate_limited', 'rule_disabled'] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
 
 export interface ActionResult {
   index: number;
   type: AutomationAction['type'];
-  status: 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
+  /** PARTIAL: it did some of what was asked (told everyone in-app, but an email failed). */
+  status: 'SUCCEEDED' | 'PARTIAL' | 'FAILED' | 'SKIPPED';
   /** Short, human-readable, never contains a secret or a payload. */
   detail: string;
+  /** Set on a failure that trying again could fix (a network hiccup), so a retry re-runs it. */
+  retryable?: boolean;
 }
+
+/** How stored results are read back: a retried execution resumes from what was already recorded. */
+export const actionResultListSchema = z.array(
+  z.object({
+    index: z.number().int(),
+    type: z.enum(['notify', 'webhook', 'create_incident']),
+    status: z.enum(['SUCCEEDED', 'PARTIAL', 'FAILED', 'SKIPPED']),
+    detail: z.string(),
+    retryable: z.boolean().optional(),
+  }),
+);
 
 /** Payload of an `automation` queue job: ids only. Everything else is read from the database. */
 export const automationJobPayloadSchema = z.object({

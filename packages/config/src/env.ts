@@ -98,6 +98,32 @@ export const workerEnvSchema = z.object({
   MONITORING_RESULT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   /** Stored webhook deliveries (which include the payload) older than this are deleted. */
   WEBHOOK_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  /** How often the automation dispatcher looks for new domain events. */
+  AUTOMATION_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(1000),
+  /** A rule that has already run this many times in the last hour is skipped (and the skip is recorded). */
+  AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10_000)
+    .default(60),
+  /** Dispatched domain events and automation executions older than this are deleted. */
+  AUTOMATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+  /** Notifications older than this are deleted. */
+  NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+  /** `log` writes emails to the worker log (no external service); `smtp` sends them. */
+  EMAIL_TRANSPORT: z.enum(['log', 'smtp']).default('log'),
+  /** smtp:// or smtps:// URL, credentials included. A secret: never logged. Required for `smtp`. */
+  SMTP_URL: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined)
+    .refine((value) => value === undefined || /^smtps?:\/\//i.test(value), {
+      message: 'must be an smtp:// or smtps:// URL',
+    }),
+  EMAIL_FROM: z.string().trim().min(3).max(200).default('NEXUS <nexus@localhost>'),
+  /** Origin of the web app: emails link back to it. */
+  WEB_ORIGIN: httpUrl.default('http://localhost:3000'),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   WORKER_HEALTH_HOST: z.string().min(1).default('0.0.0.0'),
   WORKER_HEALTH_PORT: port.default(3002),

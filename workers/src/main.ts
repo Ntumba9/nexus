@@ -7,7 +7,14 @@ import { startHealthServer } from './health-server';
 import { createLogger } from './logger';
 import { startDispatcher } from './monitoring/dispatcher';
 import { createHttpChecker } from './monitoring/http-checker';
-import { healthCheckWorker, maintenanceWorker, webhookWorker } from './processors/monitoring';
+import { startAutomationDispatcher } from './automation/dispatcher';
+import { createLogEmailSender } from './automation/email';
+import {
+  automationWorker,
+  healthCheckWorker,
+  maintenanceWorker,
+  webhookWorker,
+} from './processors/monitoring';
 import { systemWorker } from './processors/system';
 import { createBullConnection } from './redis';
 
@@ -21,6 +28,8 @@ async function main(): Promise<void> {
   const prisma = createPrismaClient(env.DATABASE_URL);
   const connection = createBullConnection(env.REDIS_URL);
   connection.on('error', (error) => logger.error('redis error', { error: error.message }));
+
+  const email = createLogEmailSender(logger);
 
   const check = createHttpChecker({ allowPrivate: env.MONITORING_ALLOW_PRIVATE_NETWORKS });
   if (env.MONITORING_ALLOW_PRIVATE_NETWORKS) {
@@ -42,16 +51,27 @@ async function main(): Promise<void> {
         prisma,
         retentionDays: env.MONITORING_RESULT_RETENTION_DAYS,
         webhookRetentionDays: env.WEBHOOK_RETENTION_DAYS,
+        automationRetentionDays: env.AUTOMATION_RETENTION_DAYS,
+        notificationRetentionDays: env.NOTIFICATION_RETENTION_DAYS,
         logger,
       }),
       connection,
       logger,
     ),
     createWorker(webhookWorker({ prisma, logger }, env.WORKER_CONCURRENCY), connection, logger),
+    createWorker(
+      automationWorker(
+        { prisma, logger, email, webOrigin: env.WEB_ORIGIN },
+        env.WORKER_CONCURRENCY,
+      ),
+      connection,
+      logger,
+    ),
   ];
 
   const healthCheckQueue = new Queue(QUEUE_NAMES.healthCheck, { connection });
   const maintenanceQueue = new Queue(QUEUE_NAMES.maintenance, { connection });
+  const automationQueue = new Queue(QUEUE_NAMES.automation, { connection });
 
   // Scheduler: claims due checks from the database and enqueues them (safe with several workers).
   const dispatcher = startDispatcher({
@@ -61,6 +81,15 @@ async function main(): Promise<void> {
     intervalMs: env.MONITORING_DISPATCH_INTERVAL_MS,
   });
 
+  // Automation: turns domain events into rule executions (safe with several workers).
+  const automationDispatcher = startAutomationDispatcher({
+    prisma,
+    queue: automationQueue,
+    logger,
+    intervalMs: env.AUTOMATION_DISPATCH_INTERVAL_MS,
+    maxExecutionsPerRulePerHour: env.AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR,
+  });
+
   // Hourly retention jobs. The job id is derived from the hour, so with several workers only one
   // job per hour is ever created.
   const scheduleCleanup = () => {
@@ -68,6 +97,7 @@ async function main(): Promise<void> {
     for (const [name, prefix] of [
       [MAINTENANCE_JOBS.cleanupResults, 'cleanup'],
       [MAINTENANCE_JOBS.cleanupWebhooks, 'cleanup-webhooks'],
+      [MAINTENANCE_JOBS.cleanupAutomation, 'cleanup-automation'],
     ] as const) {
       const slot = `${prefix}-${hour}`;
       maintenanceQueue
@@ -104,9 +134,14 @@ async function main(): Promise<void> {
     healthServer.close();
     clearInterval(cleanupTimer);
     await dispatcher.stop();
+    await automationDispatcher.stop();
     // close() waits for in-flight jobs to finish before resolving.
     await Promise.all(workers.map((worker) => worker.close()));
-    await Promise.all([healthCheckQueue.close(), maintenanceQueue.close()]);
+    await Promise.all([
+      healthCheckQueue.close(),
+      maintenanceQueue.close(),
+      automationQueue.close(),
+    ]);
     await connection.quit();
     await prisma.$disconnect();
     process.exit(0);

@@ -624,6 +624,12 @@ model Notification {
   /// An in-app path built by the server from ids ("/orgs/…"); never user input.
   link           String?
   readAt         DateTime?          @db.Timestamptz(6)
+  /// Shown in the recipient's inbox. False for an email-only notification.
+  inApp          Boolean            @default(true)
+  /// NONE (not requested), PENDING, SENT or FAILED. Makes a retried action idempotent per recipient.
+  emailStatus    String             @default("NONE")
+  /// A short reason, never a message body or an address.
+  emailError     String?
   /// Which execution and action produced it: unique per recipient, so a retried job cannot duplicate.
   executionId    String?            @db.Uuid
   actionIndex    Int?
