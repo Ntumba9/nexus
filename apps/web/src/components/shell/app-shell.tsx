@@ -1,6 +1,7 @@
 import type { MeResponse, Role } from '@nexus/shared';
 import type { ReactNode } from 'react';
 import { NotificationBell } from '@/components/notifications/notification-bell';
+import { LiveIndicator, RealtimeProvider } from '@/components/realtime/realtime-provider';
 import { Nav } from './nav';
 import { OrgSwitcher } from './org-switcher';
 import { UserMenu } from './user-menu';
@@ -30,7 +31,9 @@ export function AppShell({
           <span className="font-mono text-xs tracking-[0.3em] text-accent">NEXUS</span>
           <OrgSwitcher memberships={me.memberships} currentId={organizationId} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <RealtimeProvider orgId={organizationId} />
+          <LiveIndicator />
           <NotificationBell orgId={organizationId} />
           <UserMenu user={me.user} />
         </div>

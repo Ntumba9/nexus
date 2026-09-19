@@ -7,6 +7,7 @@ import { Alert, Skeleton } from '@/components/ui/feedback';
 import { apiFetch, describeError } from '@/lib/api-client';
 import { timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 
 /** The notifications bell: an unread badge, and the latest few in a popover. */
@@ -14,7 +15,7 @@ export function NotificationBell({ orgId }: { orgId: string }) {
   const unread = useQuery({
     queryKey: keys.unread(orgId),
     queryFn: () => fetchers.unread(orgId),
-    refetchInterval: 20_000, // live push arrives with real-time updates in a later phase
+    refetchInterval: pollEvery(20_000),
   });
   const count = unread.data ?? 0;
 

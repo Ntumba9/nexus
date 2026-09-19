@@ -9,6 +9,7 @@ import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { ProjectsModule } from './projects/projects.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ProjectsModule } from './projects/projects.module';
     GitHubModule,
     AutomationModule,
     AuditModule,
+    RealtimeModule,
     HealthModule,
   ],
 })

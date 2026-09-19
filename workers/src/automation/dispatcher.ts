@@ -3,6 +3,10 @@ import {
   AUTOMATION_JOBS,
   conditionListSchema,
   evaluateConditions,
+  publishRealtime,
+  topicsForDomainEvent,
+  type RealtimePublisher,
+  type RealtimeTopic,
   type AutomationJobPayload,
   type Facts,
   type SkipReason,
@@ -31,6 +35,8 @@ export interface DispatchOptions {
   batchSize?: number;
   /** Restrict to one organisation (tests and operational tooling); default is all. */
   organizationId?: string | null;
+  /** When set, every claimed event is announced to browsers once it is committed (ADR-014). */
+  realtime?: RealtimePublisher;
 }
 
 export interface DispatchResult {
@@ -70,7 +76,7 @@ export async function dispatchDomainEvents(
   const batchSize = options.batchSize ?? 50;
   const organizationId = options.organizationId ?? null;
 
-  const { events, created, skipped } = await prisma.$transaction(
+  const { events, created, skipped, announce } = await prisma.$transaction(
     async (tx) => {
       const claimed = await tx.$queryRaw<ClaimedEvent[]>`
         SELECT "id", "organizationId", "type", "subjectId", "facts", "causedByExecutionId"
@@ -83,8 +89,13 @@ export async function dispatchDomainEvents(
 
       const created: AutomationJobPayload[] = [];
       let skipped = 0;
+      const announce = new Map<string, Set<RealtimeTopic>>();
 
       for (const event of claimed) {
+        // Every event is news to the browser, including ones an automation caused.
+        const topics = announce.get(event.organizationId) ?? new Set<RealtimeTopic>();
+        for (const topic of topicsForDomainEvent(event.type)) topics.add(topic);
+        announce.set(event.organizationId, topics);
         if (event.causedByExecutionId === null) {
           const rules = await tx.automationRule.findMany({
             where: { organizationId: event.organizationId, trigger: event.type, enabled: true },
@@ -123,12 +134,22 @@ export async function dispatchDomainEvents(
         }
         await tx.$executeRaw`UPDATE "DomainEvent" SET "dispatchedAt" = now() WHERE "id" = ${event.id}::uuid`;
       }
-      return { events: claimed.length, created, skipped };
+      return { events: claimed.length, created, skipped, announce };
     },
     { timeout: 30_000 },
   );
 
   await enqueue(queue, created, logger);
+  // After the commit, so a browser that refetches sees what the event describes.
+  if (options.realtime) {
+    for (const [orgId, topics] of announce) {
+      await publishRealtime(
+        options.realtime,
+        orgId,
+        [...topics].map((topic) => ({ topic })),
+      );
+    }
+  }
   return { events, executions: created.length, skipped };
 }
 
@@ -226,6 +247,7 @@ export function startAutomationDispatcher(options: {
   logger: Logger;
   intervalMs: number;
   maxExecutionsPerRulePerHour: number;
+  realtime?: RealtimePublisher;
 }): { stop(): Promise<void> } {
   let running = false;
   let stopped = false;
@@ -239,6 +261,7 @@ export function startAutomationDispatcher(options: {
     inFlight = (async () => {
       const result = await dispatchDomainEvents(options.prisma, options.queue, options.logger, {
         maxExecutionsPerRulePerHour: options.maxExecutionsPerRulePerHour,
+        ...(options.realtime ? { realtime: options.realtime } : {}),
       });
       if (result.events > 0) options.logger.debug('dispatched domain events', { ...result });
       // Look for orphaned executions occasionally, not on every tick.

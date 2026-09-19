@@ -94,9 +94,9 @@ Every transition runs in one DB transaction: update incident, insert `IncidentEv
 
 Detailed in [ai.md](ai.md) and ADR-006. Summary: worker assembles a bounded, tenant-scoped, ID-labelled context; calls Anthropic with tool use disabled; validates structured output with Zod; verifies every cited source ID exists in the assembled context; stores result in `AIInvestigation`.
 
-## 4. Real-time strategy
+## 4. Real-time strategy _(implemented in Phase 7, ADR-014)_
 
-Server-Sent Events (ADR-004). Updates are one-directional (server → browser), SSE works over plain HTTP with cookie auth, auto-reconnects, and needs no extra infrastructure beyond Redis pub/sub for fan-out across API instances. Channel per organisation; the API filters by permission before writing to a stream.
+Server-Sent Events (ADR-004). Updates are one-directional (server → browser), SSE works over plain HTTP with cookie auth, auto-reconnects, and needs no extra infrastructure beyond Redis pub/sub for fan-out across API instances. Channel per organisation; the API filters by permission before writing to a stream. Messages are signals (`{ topic, userId? }`), never data: the browser refetches through REST, so authorization lives in one place. The API publishes after successful mutations, workers publish after their own changes (the automation dispatcher announces every outbox event), and each open stream re-checks its member and session on every heartbeat. Details and limits: [ADR-014](decisions/ADR-014-realtime-implementation.md).
 
 ## 5. Observability _(planned Phase 10)_
 

@@ -77,6 +77,11 @@ export const apiEnvSchema = z.object({
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
   INTEGRATION_ENCRYPTION_KEY: encryptionKey,
   /**
+   * How often an open real-time stream sends a keep-alive and re-checks that its member and session
+   * are still valid. Keep it below any proxy's idle timeout (nginx defaults to 60 s).
+   */
+  REALTIME_HEARTBEAT_MS: z.coerce.number().int().min(100).max(55_000).default(15_000),
+  /**
    * Optional: AI features are disabled when unset (the rest of the product must keep working).
    * Read only from the environment; never logged, never sent to the browser.
    */

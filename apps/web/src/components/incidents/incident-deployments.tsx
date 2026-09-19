@@ -8,6 +8,7 @@ import { Alert, Skeleton } from '@/components/ui/feedback';
 import { apiFetch, describeError } from '@/lib/api-client';
 import { formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 
 const RELATION_LABEL: Record<DeploymentRelation, string> = {
   SUSPECTED: 'Suspected cause',
@@ -34,7 +35,7 @@ export function IncidentDeployments({
   const query = useQuery({
     queryKey: keys.incidentDeployments(orgId, incidentId),
     queryFn: () => fetchers.incidentDeployments(orgId, incidentId),
-    refetchInterval: 30_000,
+    refetchInterval: pollEvery(30_000),
   });
 
   const link = useMutation({

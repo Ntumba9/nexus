@@ -20,6 +20,7 @@ import {
 } from '@/lib/automation-format';
 import { formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 import { RuleForm } from './rule-form';
 
@@ -41,7 +42,7 @@ export function RulesPanel({ orgId }: { orgId: string }) {
   const rules = useQuery({
     queryKey: keys.rules(orgId),
     queryFn: () => fetchers.rules(orgId),
-    refetchInterval: 15_000,
+    refetchInterval: pollEvery(15_000),
   });
   const webhooks = useQuery({
     queryKey: keys.webhooks(orgId),
@@ -261,7 +262,7 @@ function Executions({
     queryFn: ({ pageParam }) => fetchers.executions(orgId, ruleId, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextBefore ?? undefined,
-    refetchInterval: 15_000,
+    refetchInterval: pollEvery(15_000),
   });
 
   if (query.isPending) return <Skeleton className="h-16" />;

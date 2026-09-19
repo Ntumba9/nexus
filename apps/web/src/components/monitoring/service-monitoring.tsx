@@ -21,6 +21,7 @@ import { Field, Input, Select } from '@/components/ui/field';
 import { apiFetch, describeError } from '@/lib/api-client';
 import { formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 
 const CHECK_HEALTH_LABEL = {
@@ -57,7 +58,7 @@ export function ServiceMonitoring({
   const checks = useQuery({
     queryKey: keys.checks(orgId, serviceId),
     queryFn: () => fetchers.checks(orgId, serviceId),
-    refetchInterval: 10_000, // live push updates arrive in a later phase
+    refetchInterval: pollEvery(10_000),
   });
 
   return (
@@ -274,7 +275,7 @@ function Results({ orgId, check }: { orgId: string; check: MonitoringCheckDto })
   const results = useQuery({
     queryKey: keys.results(orgId, check.id),
     queryFn: () => fetchers.results(orgId, check.id, 20),
-    refetchInterval: 10_000,
+    refetchInterval: pollEvery(10_000),
   });
 
   if (results.isPending) return <Skeleton className="h-24" />;

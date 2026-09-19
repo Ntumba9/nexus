@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ApiError, apiFetch, describeError } from '@/lib/api-client';
 import { actionLabel, describeEvent, formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 import { IncidentDeployments } from '@/components/incidents/incident-deployments';
 
 export function IncidentDetail({
@@ -38,12 +39,12 @@ export function IncidentDetail({
   const incident = useQuery({
     queryKey: keys.incident(orgId, incidentId),
     queryFn: () => fetchers.incident(orgId, incidentId),
-    refetchInterval: 15_000, // live updates arrive in a later phase
+    refetchInterval: pollEvery(15_000),
   });
   const events = useQuery({
     queryKey: keys.events(orgId, incidentId),
     queryFn: () => fetchers.events(orgId, incidentId),
-    refetchInterval: 15_000,
+    refetchInterval: pollEvery(15_000),
   });
 
   const refresh = () =>

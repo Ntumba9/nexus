@@ -8,6 +8,7 @@ import { Alert, EmptyState, Skeleton } from '@/components/ui/feedback';
 import { describeError } from '@/lib/api-client';
 import { formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 
 const STATUS_LABEL: Record<DeploymentStatus, string> = {
@@ -61,7 +62,7 @@ export function DeploymentsList({
   const deployments = useQuery({
     queryKey: [...keys.deployments(orgId, serviceId), limit],
     queryFn: () => fetchers.deployments(orgId, serviceId, limit),
-    refetchInterval: 15_000, // live push updates arrive in a later phase
+    refetchInterval: pollEvery(15_000),
   });
 
   if (deployments.isPending) {

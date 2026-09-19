@@ -9,12 +9,13 @@ import { Alert, Card, EmptyState, Skeleton } from '@/components/ui/feedback';
 import { describeEvent, timeAgo } from '@/lib/incident-format';
 import { describeError } from '@/lib/api-client';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 
 export function DashboardView({ orgId }: { orgId: string }) {
   const query = useQuery({
     queryKey: keys.dashboard(orgId),
     queryFn: () => fetchers.dashboard(orgId),
-    refetchInterval: 30_000, // live push updates arrive in a later phase
+    refetchInterval: pollEvery(30_000),
   });
 
   if (query.isPending) {

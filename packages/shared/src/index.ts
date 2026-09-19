@@ -9,5 +9,6 @@ export * from './monitoring';
 export * from './permissions';
 export * from './projects';
 export * from './queues';
+export * from './realtime';
 // Note: ./net-safety is intentionally NOT exported here (Node-only); import '@nexus/shared/net-safety'.
 // Note: ./webhook-security is also Node-only; import '@nexus/shared/webhook-security'.

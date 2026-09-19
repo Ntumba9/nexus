@@ -2,11 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 6 complete (automation and notifications).** Accounts, organizations, RBAC, projects, services,
+> **Status: Phase 7 complete (real-time updates).** Accounts, organizations, RBAC, projects, services,
 > incident management, the dashboard, HTTP monitoring, GitHub deployments linked to incidents, and a
-> rule-based automation and notification system with an audit log are built and tested in CI (unit, API
-> and worker integration against real PostgreSQL and Redis, and Playwright end-to-end). Real-time
-> updates, the knowledge base and AI are **not built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
+> rule-based automation and notification system with an audit log, and live updates over Server-Sent Events
+> are built and tested in CI (unit, API and worker integration against real PostgreSQL and Redis, and
+> Playwright end-to-end). The knowledge base and AI are **not built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
 
 ## What it is
 
@@ -37,6 +37,7 @@ useful when the AI provider is unavailable.
 - Automation: rules made of a trigger, conditions and typed actions (notify people in-app or by email, call a signed webhook, open an incident), with templates to start from. Events are written in the same transaction as the change that caused them, matched by workers exactly once, and every run is recorded with each action's result. Cooldowns, an hourly cap and a no-chains rule keep it from running away
 - Notifications: a bell and inbox where everyone sees only their own; email through a `log` or SMTP transport
 - Audit log: append-only in the database, written with the change it describes and redacted first; covers automation, outbound webhooks and integrations
+- Real-time updates: one Server-Sent Events stream per browser tab, fed through Redis pub/sub so several API instances and the workers all reach it. Messages are signals with no record data (the browser refetches through the normal, authorized API), only reach members allowed to read that topic, and end as soon as the member is removed or signs out. Polling stays as a slow fallback, and a Live/Polling indicator shows which mode you are in
 - Overview dashboard built from real data: active incidents by severity, service health (real once checks exist; "not monitored" otherwise), 14-day trend, recent incidents and activity
 - Authenticated web app shell (dark UI): login, register, onboarding, dashboard, projects, services, incidents, settings and members, with loading, error and empty states
 - Tenant isolation enforced by the database as well as the application (composite foreign keys), proven by cross-tenant tests that bypass the API with raw SQL
@@ -172,6 +173,7 @@ process with a message naming the variable (never its value). See [.env.example]
 | `WEBHOOK_RETENTION_DAYS`                                                         | workers      | stored webhook deliveries are deleted after this many days (default `30`); deployments are kept                                                            |
 | `EMAIL_TRANSPORT`, `SMTP_URL`, `EMAIL_FROM`                                      | workers      | `log` (default) writes emails to the worker log; `smtp` sends them and needs `SMTP_URL` (`smtp://user:pass@host:587`, a secret)                            |
 | `AUTOMATION_DISPATCH_INTERVAL_MS`, `AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR` | workers      | how often events are matched to rules (default `1000` ms) and the per-rule hourly cap (default `60`)                                                       |
+| `REALTIME_HEARTBEAT_MS`                                                          | api          | keep-alive and access re-check interval of each open real-time stream (default `15000`). Keep it below your reverse proxy's idle timeout (nginx: 60 s)     |
 | `AUTOMATION_RETENTION_DAYS`, `NOTIFICATION_RETENTION_DAYS`                       | workers      | dispatched events with their runs, and notifications, are deleted after this many days (default `90`)                                                      |
 | `WEB_ORIGIN`                                                                     | workers too  | emails link back to it (default `http://localhost:3000`)                                                                                                   |
 | `COOKIE_SECURE`                                                                  | api          | session cookie `Secure`; default: production                                                                                                               |
@@ -245,7 +247,7 @@ local development fallback; no paid embedding provider is configured.
 | 4     | Monitoring and workers                        | Done    |
 | 5     | GitHub integration                            | Done    |
 | 6     | Automation and notifications                  | Done    |
-| 7     | Real-time                                     | Next    |
+| 7     | Real-time                                     | Done    |
 | 8     | Knowledge base and RAG                        | Planned |
 | 9     | AI investigation                              | Planned |
 | 10    | Security hardening and observability          | Planned |

@@ -20,7 +20,7 @@ import {
   webhookWorker,
 } from './processors/monitoring';
 import { systemWorker } from './processors/system';
-import { createBullConnection } from './redis';
+import { createBullConnection, createPublisherConnection } from './redis';
 
 const HOUR_MS = 3_600_000;
 
@@ -32,6 +32,9 @@ async function main(): Promise<void> {
   const prisma = createPrismaClient(env.DATABASE_URL);
   const connection = createBullConnection(env.REDIS_URL);
   connection.on('error', (error) => logger.error('redis error', { error: error.message }));
+  // Real-time signals to browsers (ADR-014); best-effort, so it has its own fail-fast connection.
+  const realtime = createPublisherConnection(env.REDIS_URL);
+  realtime.on('error', (error) => logger.warn('realtime redis error', { error: error.message }));
 
   // Email: `log` needs nothing; `smtp` needs a URL. Fail at startup, not at the first notification.
   if (env.EMAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
   const workers = [
     createWorker(systemWorker(env.WORKER_CONCURRENCY), connection, logger),
     createWorker(
-      healthCheckWorker({ prisma, check, logger }, env.WORKER_CONCURRENCY),
+      healthCheckWorker({ prisma, check, logger, realtime }, env.WORKER_CONCURRENCY),
       connection,
       logger,
     ),
@@ -80,10 +83,14 @@ async function main(): Promise<void> {
       connection,
       logger,
     ),
-    createWorker(webhookWorker({ prisma, logger }, env.WORKER_CONCURRENCY), connection, logger),
+    createWorker(
+      webhookWorker({ prisma, logger, realtime }, env.WORKER_CONCURRENCY),
+      connection,
+      logger,
+    ),
     createWorker(
       automationWorker(
-        { prisma, logger, email, webOrigin: env.WEB_ORIGIN, handlers },
+        { prisma, logger, email, webOrigin: env.WEB_ORIGIN, handlers, realtime },
         env.WORKER_CONCURRENCY,
       ),
       connection,
@@ -110,6 +117,7 @@ async function main(): Promise<void> {
     logger,
     intervalMs: env.AUTOMATION_DISPATCH_INTERVAL_MS,
     maxExecutionsPerRulePerHour: env.AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR,
+    realtime,
   });
 
   // Hourly retention jobs. The job id is derived from the hour, so with several workers only one
@@ -164,7 +172,7 @@ async function main(): Promise<void> {
       maintenanceQueue.close(),
       automationQueue.close(),
     ]);
-    await connection.quit();
+    await Promise.allSettled([connection.quit(), realtime.quit()]);
     await prisma.$disconnect();
     process.exit(0);
   };
