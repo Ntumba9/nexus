@@ -35,6 +35,11 @@ const groups = {
     'POSTGRES_HOST_PORT',
     'REDIS_HOST_PORT',
   ],
+  'Optional (the feature is off until it is set)': [
+    'INTEGRATION_ENCRYPTION_KEY',
+    'SMTP_URL',
+    'EMAIL_FROM',
+  ],
   'Required later (Phase 9 AI investigation; optional until then)': ['ANTHROPIC_API_KEY'],
 };
 

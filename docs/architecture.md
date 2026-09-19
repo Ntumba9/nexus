@@ -77,13 +77,18 @@ RESOLVED → INVESTIGATING (reopen, permission-gated)
 
 Every transition runs in one DB transaction: update incident, insert `IncidentEvent`, insert `AuditLog` (where sensitive), then after commit publish SSE and enqueue notification/automation jobs.
 
-### 3.4 Automation
+### 3.4 Automation _(implemented in Phase 6; see ADR-013)_
 
-Rule = `trigger` (event type) + `conditions` (JSON, validated Zod schema: field/operator/value, AND-combined) + `actions` (typed list). Executions are recorded in `AutomationExecution` with a unique `(ruleId, eventId)` so redelivery does not double-run. Actions are an allow-list of typed handlers (`notify`, `create_incident`, `create_github_issue`, `webhook`); AI output can never trigger actions.
+`change → DomainEvent (same transaction) → dispatcher → rule evaluation → AutomationExecution → actions → recorded result → AuditLog`
 
-### 3.5 Notifications
+1. **Announce.** Whatever changes something automation may care about writes a `DomainEvent` in the same transaction: every incident timeline event goes through `recordIncidentEvent`, service health changes through `recomputeServiceHealth`, deployments through the worker's upsert. A rolled-back change leaves no event.
+2. **Dispatch.** A worker loop claims undispatched events (`FOR UPDATE SKIP LOCKED`), loads the enabled rules of the event's own organization for that trigger, evaluates their conditions against the event's flat facts, applies the cooldown and hourly cap, and records one `AutomationExecution` per match (unique per rule and event), marking the event dispatched in the same transaction. Events caused by an automation never run rules (no chains).
+3. **Execute.** A BullMQ job per execution runs the rule's typed actions (`notify`, `webhook`, `create_incident`), saving each result as it goes, so a retry resumes and never repeats finished work.
+4. **Record.** The verdict (`SUCCEEDED`, `PARTIAL`, `FAILED`, `SKIPPED`) and each action's result are stored; a run about an incident is noted on its timeline; changes to rules and automation-opened incidents go to the append-only audit log.
 
-`NotificationChannel` interface (`send(notification, recipient)`), implementations: `InAppChannel`, `EmailChannel` (SMTP/log transport in dev). Routing policy (severity → channels) is data, not code in incident services. Slack later = one new class + registration.
+### 3.5 Notifications _(implemented in Phase 6)_
+
+`notify` writes one `Notification` per recipient (the delivery record: inbox row plus email status) and sends email through a transport seam (`log` by default, or SMTP). Routing is data: the rule says who (roles, named members, the incident's assignees, the person assigned) and which channels. Recipients are re-checked against current membership when the action runs. Slack or another channel is one new transport, not a redesign.
 
 ### 3.6 AI investigation
 

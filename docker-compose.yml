@@ -138,6 +138,13 @@ services:
       # Off by default: monitoring must not be able to probe the network the platform runs in.
       MONITORING_ALLOW_PRIVATE_NETWORKS: ${MONITORING_ALLOW_PRIVATE_NETWORKS:-false}
       MONITORING_RESULT_RETENTION_DAYS: ${MONITORING_RESULT_RETENTION_DAYS:-30}
+      # Automation and notifications. The key is the same one the API uses: it decrypts the
+      # signing secrets of outbound webhooks. `log` writes emails to the worker log; `smtp` sends them.
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-log}
+      SMTP_URL: ${SMTP_URL:-}
+      EMAIL_FROM: '${EMAIL_FROM:-NEXUS <nexus@localhost>}'
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -125,7 +125,7 @@ Every child references its parent through a composite foreign key `(organization
 
 `Organization.incidentCounter` is incremented with a single atomic `UPDATE` inside the incident-creation transaction. The row lock serialises concurrent creation, and a rollback also rolls the counter back, so numbers are gap-free and never reused. A test creates eight incidents concurrently and asserts `1..8`.
 
-Not yet implemented from the design above: automation, `Notification`, knowledge, `AIInvestigation`, `AuditLog` and `ApiKey`.
+Not yet implemented from the design above: knowledge, `AIInvestigation` and `ApiKey`.
 
 ---
 
@@ -158,3 +158,19 @@ Migration `20260920100000_github_integration`. All four tables use the same comp
 - `IncidentEventType` gains `DEPLOYMENT_LINKED`.
 
 Not stored, on purpose: commit messages (`deployment_status` does not carry them) and events of types NEXUS does not use.
+
+---
+
+## Phase 6 as implemented
+
+Migrations `20260921100000_automation` and `20260921110000_notification_delivery`. Every table has `organizationId` and the composite tenant-safe foreign keys used elsewhere.
+
+- **`DomainEvent`**: the outbox. `type` (a trigger name, text with a CHECK constraint that mirrors `@nexus/shared`, so the same string is used at every layer), `subjectId`, `facts` (a flat JSON object, CHECK-enforced), `causedByExecutionId` (set for events an automation caused: the loop guard), `dispatchedAt`. A partial index keeps the "still to do" scan tiny.
+- **`AutomationRule`**: `trigger`, `conditions` and `actions` (JSON validated by `@nexus/shared` on every write; CHECKs bound their size), `enabled`, `cooldownSeconds` (0 to 86400).
+- **`AutomationExecution`**: **unique `(ruleId, eventId)`**, `status` (`PENDING`, `RUNNING`, `SUCCEEDED`, `PARTIAL`, `FAILED`, `SKIPPED`), `skipReason` (only on a skipped execution, CHECK-enforced), per-action `results`, `attempts`.
+- **`Notification`**: per recipient. The composite key to `OrganizationMember` means it can only exist for a member of its own organization. **Unique `(executionId, actionIndex, userId)`**, `inApp`, `emailStatus` (`NONE`, `PENDING`, `SENT`, `FAILED`), a short `emailError`, and a `link` CHECK-limited to in-app paths (`/orgs/…`).
+- **`OutboundWebhook`**: `url` (http(s) only), `secretEncrypted` (AES-256-GCM bound to the row id), `enabled`.
+- **`AuditLog`**: **append-only**: triggers (the same function as the incident timeline) reject UPDATE, DELETE and TRUNCATE, and the organization foreign key is `RESTRICT`, so it cannot be silently emptied. `actorLabel` is a snapshot of who acted. Metadata is redacted before it is written.
+- `IncidentEventType` gains `AUTOMATION_EXECUTED`.
+
+Retention: dispatched events (with their executions) and notifications are deleted after `AUTOMATION_RETENTION_DAYS` and `NOTIFICATION_RETENTION_DAYS`. Undispatched events and the audit log are never deleted by retention.

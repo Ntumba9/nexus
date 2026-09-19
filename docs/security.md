@@ -43,7 +43,7 @@ Status: **Phase 2 implemented** (authentication, sessions, RBAC, tenant isolatio
 
 Every failure returns `{ "error": { "code", "message", "details?", "requestId" } }`. Unknown errors become a generic 500; stack traces and internal messages are logged server-side only. Malformed JSON, unknown routes and oversized bodies get the same envelope. Validation details name fields and rules, never the submitted values. A correlation id (`X-Request-Id`) is attached to every response.
 
-## Outbound requests and SSRF (implemented for monitoring)
+## Outbound requests and SSRF (implemented for monitoring and outbound webhooks)
 
 Health checks make HTTP requests to URLs that users supply, which is the classic server-side request forgery (SSRF) risk: someone could point a check at `http://169.254.169.254/` (cloud metadata), `http://localhost:5432/`, or an internal admin service and use NEXUS to probe or reach the network it runs in. Defence in depth, all tested:
 
@@ -58,6 +58,18 @@ Health checks make HTTP requests to URLs that users supply, which is the classic
 
 Residual risks: a public hostname can still resolve to a public address that is in turn owned by an attacker who forwards traffic (that is outside what a client can prevent); the checker identifies itself with a fixed `User-Agent` (`NEXUS-Monitor/1.0`) and sends no credentials; custom request headers and authenticated checks are not supported (and would need encrypted secret storage first).
 
+## Automation and notifications (implemented)
+
+1. **Tenant isolation is structural.** Rules, events, executions, notifications, destinations and audit entries all carry `organizationId` behind composite foreign keys; a notification's key points at `OrganizationMember`, so it can only exist for a member of its own organization. The worker reads the organization from the stored event, never from a job payload, and a job pointed at another organization's execution finds nothing.
+2. **A rule cannot reference another tenant's things.** Webhook destinations and named recipients must belong to the rule's organization when it is saved, and are checked again when it runs (a person removed since is skipped; a disabled destination fails clearly).
+3. **Nothing user-controlled is ever interpreted.** Templates are plain `{{fact}}` substitution with no expressions or HTML; values are length-limited and stripped of control characters; titles and email subjects are single-line (no header injection); emails are plain text; recipient addresses come from user records, never from rule input; notification links are in-app paths built from ids and CHECK-constrained. The UI renders all of it as text.
+4. **Actions are an allow-list.** `notify`, `webhook` and `create_incident`, each with a strict schema (unknown keys dropped). AI output can never trigger actions.
+5. **It cannot run away.** Per-rule cooldown and hourly cap (skips are recorded), limits on rules, actions and recipients, and no automation chains: an event an automation caused never triggers another rule.
+6. **Secrets.** Outbound webhook signing secrets are AES-256-GCM encrypted, shown once, decrypted in memory only inside the worker, and never logged, stored in a result or written to the audit log. SMTP credentials are only ever passed to the mail library; errors are reduced to a short code first.
+7. **Outbound webhooks** are signed with the timestamp inside the signed text (replay protection for receivers), use the monitoring SSRF protections at save time and again at send time, never follow redirects and never read the response body.
+8. **The audit log** is append-only in the database, written in the same transaction as the change, and redacted before writing because nothing can be corrected afterwards.
+9. **Notifications are private.** Every query is scoped by the user from the verified session, never from a parameter; another person's notification is a 404.
+
 ## Threat model
 
 | Threat                            | Vector                                                       | Control                                                                                                                                                                                                                                                                          |
@@ -68,7 +80,7 @@ Residual risks: a public hostname can still resolve to a public address that is 
 | Broken authorization (IDOR)       | Guess IDs                                                    | UUIDs, tenant-scoped queries, membership guard, cross-tenant tests (implemented)                                                                                                                                                                                                 |
 | Tenant data leakage               | Missing `where`                                              | Composite unique keys, scoped queries, tests (implemented); optional RLS and vector queries filtered by org (later)                                                                                                                                                              |
 | Webhook spoofing                  | Forged GitHub events                                         | Implemented (ADR-012): HMAC-SHA256 on the raw body, constant-time compare, per-integration secret (shown once, AES-256-GCM at rest), unauthenticated payloads never stored, per-integration delivery-ID idempotency, request size cap, per-address and bad-signature rate limits |
-| SSRF                              | User-supplied health-check URLs / webhook actions            | Implemented for monitoring: validation on save and request-time DNS pinning that refuses non-public addresses, scheme allow-list, no redirects, no body read, hard deadline. Same module will guard webhooks/integrations.                                                       |
+| SSRF                              | User-supplied health-check URLs / webhook actions            | Implemented for monitoring: validation on save and request-time DNS pinning that refuses non-public addresses, scheme allow-list, no redirects, no body read, hard deadline. The same module and the same rules guard outbound webhooks (Phase 6), including at send time.       |
 | Prompt injection                  | Incident text, commit messages, KB docs, health-check bodies | See AI-specific controls                                                                                                                                                                                                                                                         |
 | Sensitive data exposure           | Logs, audit, AI                                              | Uniform errors, validated env that never echoes values (implemented); redaction list, secrets excluded from context builders (later)                                                                                                                                             |
 | SQL injection                     | Any query                                                    | Prisma parameterisation; raw SQL only via tagged templates (implemented)                                                                                                                                                                                                         |
@@ -76,7 +88,7 @@ Residual risks: a public hostname can still resolve to a public address that is 
 | Rate abuse / DoS                  | Any endpoint, AI endpoint                                    | Auth limits (implemented); global limits, per-org AI quotas, job concurrency caps, body size limits (later; Nest's default 100 kB JSON limit applies now)                                                                                                                        |
 | Malicious upload                  | (No file uploads planned.)                                   | If added: type/size allow-list, no execution, separate storage                                                                                                                                                                                                                   |
 | Supply chain                      | Dependencies                                                 | Lockfile, exact version pins (implemented); `pnpm audit` and Dependabot in CI (later)                                                                                                                                                                                            |
-| Audit tampering                   | Compromised admin/app bug                                    | DB trigger blocks UPDATE/DELETE on AuditLog (Phase 10)                                                                                                                                                                                                                           |
+| Audit tampering                   | Compromised admin/app bug                                    | Implemented (Phase 6): database triggers reject UPDATE, DELETE and TRUNCATE on AuditLog; entries are written inside the transaction of the change and redacted first. Wider coverage is Phase 10                                                                                 |
 
 ## AI-specific controls (design; Phase 9)
 
@@ -118,7 +130,7 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 - **Registration enumeration** (above) until email verification exists.
 - **No account lockout, password reset, MFA or "log out everywhere"** yet. `SessionService.revokeAllForUser` exists for the latter; no endpoint uses it.
 - **Stale role within a request.** A role is read at the start of a request; a change made during that request is not seen until the next one. Ownership safety is unaffected because owner counts are re-read under a row lock.
-- **No audit log yet** (Phase 10). Role changes and member removals are not yet recorded.
+- **The audit log covers automation, outbound webhooks, GitHub integrations and incidents opened by automation** (Phase 6). Role changes, member removals and sign-in events are not yet recorded (Phase 10).
 - **Web CSP** is not set (Phase 10). Swagger UI is served without CSP (dev tool; disable with `SWAGGER_ENABLED=false`).
 - **Member add-by-email** lets holders of `users.manage` probe whether an email has an account. Replace with email invitations when email delivery exists.
 
@@ -134,4 +146,6 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 - [x] Webhook signature verification, encrypted secrets, replay/duplicate handling and repository check (Phase 5)
 - [x] SSRF protections on health checks: URL validation, request-time DNS pinning, no redirects, no body read (Phase 4)
 - [ ] AI context isolation (Phase 9)
-- [ ] Audit log with DB-enforced immutability, web CSP, OpenTelemetry (Phase 10)
+- [x] Audit log with DB-enforced immutability, redaction before write, and coverage of automation, webhooks and integrations (Phase 6)
+- [x] Automation safety valves: cooldown, hourly cap, no automation chains, per-organization limits; recipients and destinations re-checked at run time (Phase 6)
+- [ ] Audit coverage of the rest of the product, web CSP, OpenTelemetry (Phase 10)
