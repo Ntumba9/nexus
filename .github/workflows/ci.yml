@@ -89,6 +89,9 @@ jobs:
       REDIS_URL: redis://localhost:6379
       # Tests register many users from one IP; production defaults would (correctly) throttle them.
       AUTH_RATE_LIMIT_MAX: '1000'
+      # The monitoring E2E watches a service on 127.0.0.1, which is refused unless the operator opts in.
+      MONITORING_ALLOW_PRIVATE_NETWORKS: 'true'
+      MONITORING_DISPATCH_INTERVAL_MS: '1000'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

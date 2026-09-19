@@ -36,5 +36,21 @@ export default defineConfig({
           reuseExistingServer: !process.env.CI,
           timeout: 60_000,
         },
+        {
+          // The monitoring worker: scheduler + health-check processor. Needs PostgreSQL and Redis.
+          command: 'pnpm --filter @nexus/workers start',
+          cwd: '../..',
+          url: 'http://localhost:3002/health/ready',
+          reuseExistingServer: !process.env.CI,
+          timeout: 60_000,
+        },
+        {
+          // A tiny HTTP service whose status code the monitoring test flips to simulate an outage.
+          command: 'node tests/e2e/support/target-server.mjs',
+          cwd: '../..',
+          url: 'http://127.0.0.1:4100/__ready',
+          reuseExistingServer: !process.env.CI,
+          timeout: 15_000,
+        },
       ],
 });

@@ -20,6 +20,16 @@ const baseEnv = {
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 };
 
+/**
+ * Operator opt-in to monitor private/internal addresses (localhost, 10.x, 192.168.x…). Off by
+ * default: with it off, monitoring cannot be used to probe the network the platform runs in (SSRF).
+ * Turn it on for self-hosted setups that monitor internal services, for local development and tests.
+ */
+const monitoringPrivateNetworks = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((value) => value === 'true');
+
 const databaseUrl = urlWithProtocol(['postgresql:', 'postgres:'], 'PostgreSQL');
 const redisUrl = urlWithProtocol(['redis:', 'rediss:'], 'Redis');
 const httpUrl = urlWithProtocol(['http:', 'https:'], 'HTTP(S)');
@@ -52,6 +62,7 @@ export const apiEnvSchema = z.object({
   /** Auth rate limit: attempts per window per account. Per-IP limits are derived from this. */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(100000).default(10),
   AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86400).default(900),
+  MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
   /**
    * Optional: AI features are disabled when unset (the rest of the product must keep working).
    * Read only from the environment; never logged, never sent to the browser.
@@ -63,10 +74,15 @@ export const apiEnvSchema = z.object({
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
-/** Workers only need Redis in Phase 1; DATABASE_URL is added when a job first touches the DB. */
 export const workerEnvSchema = z.object({
   ...baseEnv,
+  DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
+  MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
+  /** How often the dispatcher looks for checks that are due. */
+  MONITORING_DISPATCH_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(5000),
+  /** Monitoring results older than this are deleted by the maintenance job. */
+  MONITORING_RESULT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   WORKER_HEALTH_HOST: z.string().min(1).default('0.0.0.0'),
   WORKER_HEALTH_PORT: port.default(3002),

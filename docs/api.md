@@ -98,3 +98,21 @@ OPEN → ACKNOWLEDGED → INVESTIGATING → MITIGATED → RESOLVED
 with shortcuts forward (resolve from ACKNOWLEDGED, INVESTIGATING or MITIGATED), regression MITIGATED → INVESTIGATING, reopening RESOLVED → INVESTIGATING (requires `incidents.resolve`), and cancellation from any unresolved state. `CANCELLED` is terminal. The rule table lives once in `packages/shared/src/incidents.ts`, is tested exhaustively (all 36 status pairs), is enforced by the API on every transition, and is only _used_ by the web app to decide which buttons to show. Two simultaneous transitions cannot both succeed: the update is applied with `WHERE status = <status we validated against>`.
 
 Every change writes an `IncidentEvent` in the same transaction as the change. Event types so far: `CREATED`, `UPDATED`, `STATUS_CHANGED`, `SEVERITY_CHANGED`, `ASSIGNED`, `UNASSIGNED`, `COMMENT_ADDED`. Deployment, automation and AI events are added by the phases that create them.
+
+---
+
+## Phase 4 routes (monitoring)
+
+All under `/api/v1/orgs/:orgId`.
+
+| Method and path             | Permission        | Notes                                                                                                                                                                                                                                                            |
+| --------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /services/:id/checks`  | `projects.read`   | A service's checks with their current state.                                                                                                                                                                                                                     |
+| `POST /services/:id/checks` | `services.manage` | Body `{ name, url, expectedStatus?, timeoutMs?, intervalSeconds?, failureThreshold?, recoveryThreshold?, incidentSeverity?, createIncidents?, enabled? }`. 400 `URL_NOT_ALLOWED` for unsafe URLs, 409 `CHECK_LIMIT` (max 5 per service), 409 `SERVICE_ARCHIVED`. |
+| `GET /checks/:id`           | `projects.read`   |                                                                                                                                                                                                                                                                  |
+| `PATCH /checks/:id`         | `services.manage` | Changing the URL or expected status resets the verdict and counters (the old verdict was about a different target). Enabling/disabling recomputes service health.                                                                                                |
+| `DELETE /checks/:id`        | `services.manage` | 204. Deletes its results and recomputes service health.                                                                                                                                                                                                          |
+| `POST /checks/:id/run`      | `services.manage` | **202** `{ status: "scheduled" }`. Sets `nextRunAt = now`; the dispatcher runs it on its next tick. 409 `CHECK_DISABLED`.                                                                                                                                        |
+| `GET /checks/:id/results`   | `projects.read`   | Newest first. `?limit=` (1-200, default 50) and `?before=<ISO timestamp>`; response has `nextBefore` for the next page.                                                                                                                                          |
+
+Service responses now include `healthStatus` and `healthChangedAt`. Incidents created by monitoring have `source: "MONITORING"`, no `createdBy`, and `SYSTEM` actor events.

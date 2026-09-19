@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Prisma, PrismaClient } from '@nexus/database';
+import { createIncidentRecord, type Prisma, type PrismaClient } from '@nexus/database';
 import {
   canTransition,
   permissionForTransition,
@@ -109,41 +109,17 @@ export class IncidentsService {
         if (!service) throw ApiError.notFound('Service not found');
       }
 
-      // Atomic per-organisation sequence: the row lock taken by this UPDATE serialises allocation,
-      // and a rollback also rolls the counter back, so numbers are gap-free.
-      const { incidentCounter } = await tx.organization.update({
-        where: { id: tenant.organizationId },
-        data: { incidentCounter: { increment: 1 } },
-        select: { incidentCounter: true },
-      });
-
-      const incident = await tx.incident.create({
-        data: {
-          organizationId: tenant.organizationId,
-          number: incidentCounter,
-          serviceId: input.serviceId ?? null,
-          title: input.title,
-          description: input.description,
-          severity: input.severity,
-          createdById: tenant.userId,
-        },
-        select: { id: true },
-      });
-      if (input.tags.length > 0) {
-        await tx.incidentTag.createMany({
-          data: input.tags.map((tag) => ({
-            organizationId: tenant.organizationId,
-            incidentId: incident.id,
-            tag,
-          })),
-        });
-      }
-      await this.recordEvent(tx, tenant, incident.id, 'CREATED', this.user(tenant), {
-        number: incidentCounter,
+      // Shared with the monitoring worker so number allocation and the CREATED event exist once.
+      const incident = await createIncidentRecord(tx, {
+        organizationId: tenant.organizationId,
         title: input.title,
+        description: input.description,
         severity: input.severity,
         serviceId: input.serviceId ?? null,
+        source: 'MANUAL',
+        createdById: tenant.userId,
         tags: input.tags,
+        actor: this.user(tenant),
       });
       return incident.id;
     });

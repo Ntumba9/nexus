@@ -67,6 +67,7 @@ model Organization {
   projects  Project[]
   services  Service[]
   incidents Incident[]
+  checks    MonitoringCheck[]
 }
 
 model OrganizationMember {
@@ -157,6 +158,7 @@ enum IncidentEventType {
   ASSIGNED
   UNASSIGNED
   COMMENT_ADDED
+  MONITORING_SIGNAL
 }
 
 enum ActorType {
@@ -183,20 +185,23 @@ model Project {
 }
 
 model Service {
-  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String             @db.Uuid
-  projectId      String             @db.Uuid
-  name           String
-  environment    ServiceEnvironment @default(PRODUCTION)
-  /// Set by monitoring (Phase 4). UNKNOWN means "not monitored", never "healthy".
-  healthStatus   ServiceHealth      @default(UNKNOWN)
-  description    String             @default("")
-  archivedAt     DateTime?          @db.Timestamptz(6)
-  createdAt      DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime           @updatedAt @db.Timestamptz(6)
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project        Project            @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  incidents      Incident[]
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String             @db.Uuid
+  projectId       String             @db.Uuid
+  name            String
+  environment     ServiceEnvironment @default(PRODUCTION)
+  /// Aggregated from the service's checks by the monitoring worker. UNKNOWN means "not monitored",
+  /// never "healthy".
+  healthStatus    ServiceHealth      @default(UNKNOWN)
+  healthChangedAt DateTime?          @db.Timestamptz(6)
+  description     String             @default("")
+  archivedAt      DateTime?          @db.Timestamptz(6)
+  createdAt       DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime           @updatedAt @db.Timestamptz(6)
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project            @relation(fields: [organizationId, projectId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  incidents       Incident[]
+  checks          MonitoringCheck[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, projectId, name, environment])
@@ -291,4 +296,77 @@ model IncidentTag {
 
   @@id([incidentId, tag])
   @@index([organizationId, tag])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 4: monitoring.
+//
+// A check belongs to a service through the composite tenant key; its results belong to the check
+// the same way. The check row also carries the runtime state of the state machine (consecutive
+// failures/successes, verdict, next run time) so scheduling and health survive restarts and can
+// be shared safely between several workers.
+// ---------------------------------------------------------------------------------------------
+
+enum MonitoringCheckType {
+  HTTP
+}
+
+enum CheckResultStatus {
+  UP
+  DOWN
+}
+
+model MonitoringCheck {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String              @db.Uuid
+  serviceId         String              @db.Uuid
+  name              String
+  type              MonitoringCheckType @default(HTTP)
+  url               String
+  expectedStatus    Int                 @default(200)
+  timeoutMs         Int                 @default(5000)
+  intervalSeconds   Int                 @default(60)
+  /// Consecutive failures before the check is DOWN (1 = a single failure is enough; opt-in).
+  failureThreshold  Int                 @default(3)
+  recoveryThreshold Int                 @default(2)
+  incidentSeverity  IncidentSeverity    @default(SEV2)
+  createIncidents   Boolean             @default(true)
+  enabled           Boolean             @default(true)
+
+  // Runtime state, written only by the monitoring worker.
+  healthStatus         ServiceHealth @default(UNKNOWN)
+  consecutiveFailures  Int           @default(0)
+  consecutiveSuccesses Int           @default(0)
+  lastCheckedAt        DateTime?     @db.Timestamptz(6)
+  /// When the dispatcher should next schedule this check. Setting it to now() means "run soon".
+  nextRunAt            DateTime      @default(now()) @db.Timestamptz(6)
+
+  createdAt    DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @db.Timestamptz(6)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  service      Service            @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  results      MonitoringResult[]
+
+  @@unique([organizationId, id])
+  @@index([enabled, nextRunAt])
+  @@index([organizationId, serviceId])
+}
+
+model MonitoringResult {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String            @db.Uuid
+  checkId        String            @db.Uuid
+  status         CheckResultStatus
+  statusCode     Int?
+  responseTimeMs Int?
+  /// One of the closed set in @nexus/shared FAILURE_REASONS; null when the check passed.
+  failureReason  String?
+  /// The scheduled execution slot. Unique per check, so a retried or duplicated job is recorded once.
+  scheduledFor   DateTime          @db.Timestamptz(6)
+  checkedAt      DateTime          @default(now()) @db.Timestamptz(6)
+  check          MonitoringCheck   @relation(fields: [organizationId, checkId], references: [organizationId, id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([checkId, scheduledFor])
+  @@index([checkId, checkedAt(sort: Desc)])
+  @@index([checkedAt])
 }

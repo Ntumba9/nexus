@@ -44,6 +44,8 @@ export const INCIDENT_EVENT_TYPES = [
   'ASSIGNED',
   'UNASSIGNED',
   'COMMENT_ADDED',
+  /** Recorded by monitoring on an incident it created (for example "the service recovered"). */
+  'MONITORING_SIGNAL',
 ] as const;
 export type IncidentEventType = (typeof INCIDENT_EVENT_TYPES)[number];
 

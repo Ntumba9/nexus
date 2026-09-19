@@ -3,6 +3,7 @@ import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { ProjectsModule } from './projects/projects.module';
 
@@ -13,6 +14,7 @@ import { ProjectsModule } from './projects/projects.module';
     OrganizationsModule,
     ProjectsModule,
     IncidentsModule,
+    MonitoringModule,
     HealthModule,
   ],
 })

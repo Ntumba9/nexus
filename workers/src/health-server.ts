@@ -1,13 +1,16 @@
 import { createServer, type Server } from 'node:http';
-import type { Redis } from 'ioredis';
 import type { Logger } from './logger';
+
+/** A named dependency probe: resolves if healthy, rejects otherwise. */
+export type ReadinessProbe = { name: string; check: () => Promise<unknown> };
 
 /**
  * Tiny HTTP server exposing liveness/readiness for container orchestrators (workers otherwise
- * have no port). Readiness requires Redis, since a worker without Redis cannot do any work.
+ * have no port). Readiness requires every dependency (Redis and PostgreSQL), since a worker missing
+ * either cannot do its work.
  */
 export function startHealthServer(
-  options: { host: string; port: number; redis: Redis },
+  options: { host: string; port: number; probes: ReadinessProbe[] },
   logger: Logger,
 ): Server {
   const server = createServer((req, res) => {
@@ -19,15 +22,26 @@ export function startHealthServer(
     if (req.method !== 'GET') return send(405, { status: 'error' });
     if (req.url === '/health/live') return send(200, { status: 'ok' });
     if (req.url === '/health/ready') {
-      options.redis.ping().then(
-        () => send(200, { status: 'ok', checks: { redis: { status: 'up' } } }),
-        (error: unknown) => {
-          logger.warn('readiness check failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          send(503, { status: 'down', checks: { redis: { status: 'down' } } });
-        },
-      );
+      void Promise.all(
+        options.probes.map(async (probe) => {
+          try {
+            await probe.check();
+            return [probe.name, { status: 'up' }] as const;
+          } catch (error) {
+            logger.warn('readiness check failed', {
+              probe: probe.name,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [probe.name, { status: 'down' }] as const;
+          }
+        }),
+      ).then((entries) => {
+        const allUp = entries.every(([, check]) => check.status === 'up');
+        send(allUp ? 200 : 503, {
+          status: allUp ? 'ok' : 'down',
+          checks: Object.fromEntries(entries),
+        });
+      });
       return;
     }
     send(404, { status: 'not_found' });

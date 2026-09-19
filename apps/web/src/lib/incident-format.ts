@@ -49,7 +49,9 @@ export function describeEvent(event: Pick<IncidentEventDto, 'type' | 'data'>): s
   const { data } = event;
   switch (event.type) {
     case 'CREATED':
-      return 'opened this incident';
+      return data.detectedBy === 'monitoring'
+        ? 'opened this incident (detected by monitoring)'
+        : 'opened this incident';
     case 'STATUS_CHANGED':
       return `changed status from ${statusLabel(data.from)} to ${statusLabel(data.to)}`;
     case 'SEVERITY_CHANGED':
@@ -64,6 +66,12 @@ export function describeEvent(event: Pick<IncidentEventDto, 'type' | 'data'>): s
     }
     case 'COMMENT_ADDED':
       return 'commented';
+    case 'MONITORING_SIGNAL': {
+      const check = typeof data.checkName === 'string' ? `“${data.checkName}”` : 'a check';
+      if (data.kind === 'recovered') return `observed that ${check} recovered`;
+      if (data.kind === 'went_down_again') return `observed that ${check} is failing again`;
+      return `observed a monitoring change on ${check}`;
+    }
     default:
       return 'made a change';
   }

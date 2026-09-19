@@ -65,6 +65,8 @@ export interface ServiceDto {
   name: string;
   environment: ServiceEnvironment;
   healthStatus: ServiceHealth;
+  /** When the health status last changed; null if it has never been assessed. */
+  healthChangedAt: string | null;
   description: string;
   archivedAt: string | null;
   createdAt: string;

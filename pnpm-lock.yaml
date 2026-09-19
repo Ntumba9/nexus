@@ -170,6 +170,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@nexus/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@prisma/client':
         specifier: 6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -211,6 +214,9 @@ importers:
       '@nexus/config':
         specifier: workspace:*
         version: link:../packages/config
+      '@nexus/database':
+        specifier: workspace:*
+        version: link:../packages/database
       '@nexus/shared':
         specifier: workspace:*
         version: link:../packages/shared

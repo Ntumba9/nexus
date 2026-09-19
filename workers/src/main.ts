@@ -1,22 +1,84 @@
 import { loadDotEnv, loadEnv, workerEnvSchema } from '@nexus/config';
-import { createWorker } from './create-worker';
+import { createPrismaClient, pingDatabase } from '@nexus/database';
+import { MAINTENANCE_JOBS, QUEUE_NAMES } from '@nexus/shared';
+import { Queue } from 'bullmq';
+import { DEFAULT_JOB_OPTIONS, createWorker } from './create-worker';
 import { startHealthServer } from './health-server';
 import { createLogger } from './logger';
+import { startDispatcher } from './monitoring/dispatcher';
+import { createHttpChecker } from './monitoring/http-checker';
+import { healthCheckWorker, maintenanceWorker } from './processors/monitoring';
 import { systemWorker } from './processors/system';
 import { createBullConnection } from './redis';
+
+const HOUR_MS = 3_600_000;
 
 async function main(): Promise<void> {
   loadDotEnv();
   const env = loadEnv(workerEnvSchema);
   const logger = createLogger(env.LOG_LEVEL, { service: 'nexus-worker' });
 
+  const prisma = createPrismaClient(env.DATABASE_URL);
   const connection = createBullConnection(env.REDIS_URL);
   connection.on('error', (error) => logger.error('redis error', { error: error.message }));
 
-  // Register one worker per queue here as later phases add queues.
-  const workers = [createWorker(systemWorker(env.WORKER_CONCURRENCY), connection, logger)];
+  const check = createHttpChecker({ allowPrivate: env.MONITORING_ALLOW_PRIVATE_NETWORKS });
+  if (env.MONITORING_ALLOW_PRIVATE_NETWORKS) {
+    logger.warn(
+      'monitoring may target private/internal addresses (MONITORING_ALLOW_PRIVATE_NETWORKS=true)',
+    );
+  }
+
+  // One worker per queue; add new queues here as later phases introduce them.
+  const workers = [
+    createWorker(systemWorker(env.WORKER_CONCURRENCY), connection, logger),
+    createWorker(
+      healthCheckWorker({ prisma, check, logger }, env.WORKER_CONCURRENCY),
+      connection,
+      logger,
+    ),
+    createWorker(
+      maintenanceWorker({ prisma, retentionDays: env.MONITORING_RESULT_RETENTION_DAYS, logger }),
+      connection,
+      logger,
+    ),
+  ];
+
+  const healthCheckQueue = new Queue(QUEUE_NAMES.healthCheck, { connection });
+  const maintenanceQueue = new Queue(QUEUE_NAMES.maintenance, { connection });
+
+  // Scheduler: claims due checks from the database and enqueues them (safe with several workers).
+  const dispatcher = startDispatcher({
+    prisma,
+    queue: healthCheckQueue,
+    logger,
+    intervalMs: env.MONITORING_DISPATCH_INTERVAL_MS,
+  });
+
+  // Hourly retention job. The job id is derived from the hour, so with several workers only one
+  // job per hour is ever created.
+  const scheduleCleanup = () => {
+    const slot = `cleanup-${Math.floor(Date.now() / HOUR_MS)}`;
+    maintenanceQueue
+      .add(MAINTENANCE_JOBS.cleanupResults, { slot }, { ...DEFAULT_JOB_OPTIONS, jobId: slot })
+      .catch((error: unknown) =>
+        logger.error('failed to schedule cleanup', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  };
+  scheduleCleanup();
+  const cleanupTimer = setInterval(scheduleCleanup, HOUR_MS);
+
   const healthServer = startHealthServer(
-    { host: env.WORKER_HEALTH_HOST, port: env.WORKER_HEALTH_PORT, redis: connection },
+    {
+      host: env.WORKER_HEALTH_HOST,
+      port: env.WORKER_HEALTH_PORT,
+      probes: [
+        { name: 'redis', check: () => connection.ping() },
+        { name: 'postgres', check: () => pingDatabase(prisma) },
+      ],
+    },
     logger,
   );
   logger.info('workers started', { queues: workers.map((worker) => worker.name) });
@@ -27,9 +89,13 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info('shutting down', { signal });
     healthServer.close();
+    clearInterval(cleanupTimer);
+    await dispatcher.stop();
     // close() waits for in-flight jobs to finish before resolving.
     await Promise.all(workers.map((worker) => worker.close()));
+    await Promise.all([healthCheckQueue.close(), maintenanceQueue.close()]);
     await connection.quit();
+    await prisma.$disconnect();
     process.exit(0);
   };
   process.on('SIGTERM', () => void shutdown('SIGTERM'));

@@ -35,6 +35,19 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'COMMENT_ADDED', data: { body: 'x' } })).toBe('commented');
   });
 
+  it('describes monitoring events', () => {
+    expect(describeEvent({ type: 'CREATED', data: { detectedBy: 'monitoring' } })).toBe(
+      'opened this incident (detected by monitoring)',
+    );
+    expect(
+      describeEvent({ type: 'MONITORING_SIGNAL', data: { kind: 'recovered', checkName: 'API' } }),
+    ).toBe('observed that “API” recovered');
+    expect(describeEvent({ type: 'MONITORING_SIGNAL', data: { kind: 'went_down_again' } })).toBe(
+      'observed that a check is failing again',
+    );
+    expect(describeEvent({ type: 'MONITORING_SIGNAL', data: {} })).toContain('monitoring change');
+  });
+
   it('never throws on unexpected data', () => {
     expect(describeEvent({ type: 'ASSIGNED', data: {} })).toBe('assigned a member');
     expect(describeEvent({ type: 'UPDATED', data: { fields: 'nope' } })).toBe(

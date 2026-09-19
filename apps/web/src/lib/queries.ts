@@ -4,6 +4,8 @@ import type {
   IncidentEventDto,
   IncidentPageDto,
   MemberDto,
+  MonitoringCheckDto,
+  MonitoringResultPageDto,
   ProjectDto,
   ServiceDto,
 } from '@nexus/shared';
@@ -19,6 +21,8 @@ export const keys = {
   incident: (orgId: string, id: string) => ['incident', orgId, id] as const,
   events: (orgId: string, id: string) => ['incident-events', orgId, id] as const,
   members: (orgId: string) => ['members', orgId] as const,
+  checks: (orgId: string, serviceId: string) => ['checks', orgId, serviceId] as const,
+  results: (orgId: string, checkId: string) => ['check-results', orgId, checkId] as const,
 };
 
 export const fetchers = {
@@ -40,4 +44,10 @@ export const fetchers = {
     apiFetch<IncidentPageDto>(`/orgs/${orgId}/incidents?${params.toString()}`),
   members: (orgId: string) =>
     apiFetch<{ data: MemberDto[] }>(`/orgs/${orgId}/members`).then((r) => r.data),
+  checks: (orgId: string, serviceId: string) =>
+    apiFetch<{ data: MonitoringCheckDto[] }>(`/orgs/${orgId}/services/${serviceId}/checks`).then(
+      (r) => r.data,
+    ),
+  results: (orgId: string, checkId: string, limit = 20) =>
+    apiFetch<MonitoringResultPageDto>(`/orgs/${orgId}/checks/${checkId}/results?limit=${limit}`),
 };

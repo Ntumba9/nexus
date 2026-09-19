@@ -15,6 +15,7 @@
     "test:integration": "vitest run integration"
   },
   "dependencies": {
+    "@nexus/shared": "workspace:*",
     "@prisma/client": "6.19.3"
   },
   "devDependencies": {

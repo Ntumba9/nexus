@@ -156,7 +156,14 @@ function ServiceRow(props: {
   const { service } = props;
   return (
     <tr>
-      <td className="px-5 py-3 font-medium">{service.name}</td>
+      <td className="px-5 py-3 font-medium">
+        <Link
+          href={`/orgs/${props.orgId}/services/${service.id}`}
+          className="hover:text-accent hover:underline"
+        >
+          {service.name}
+        </Link>
+      </td>
       {props.showProject && (
         <td className="px-5 py-3">
           <Link

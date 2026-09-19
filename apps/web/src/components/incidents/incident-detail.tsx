@@ -105,7 +105,11 @@ export function IncidentDetail({
         <h1 className="text-2xl font-semibold tracking-tight">{data.title}</h1>
         <p className="text-sm text-muted">
           Opened {formatDateTime(data.createdAt)}
-          {data.createdBy ? ` by ${data.createdBy.name}` : ''}
+          {data.createdBy
+            ? ` by ${data.createdBy.name}`
+            : data.source === 'MONITORING'
+              ? ' automatically by monitoring'
+              : ''}
           {data.service && (
             <>
               {' · '}
