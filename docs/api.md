@@ -97,7 +97,7 @@ OPEN → ACKNOWLEDGED → INVESTIGATING → MITIGATED → RESOLVED
 
 with shortcuts forward (resolve from ACKNOWLEDGED, INVESTIGATING or MITIGATED), regression MITIGATED → INVESTIGATING, reopening RESOLVED → INVESTIGATING (requires `incidents.resolve`), and cancellation from any unresolved state. `CANCELLED` is terminal. The rule table lives once in `packages/shared/src/incidents.ts`, is tested exhaustively (all 36 status pairs), is enforced by the API on every transition, and is only _used_ by the web app to decide which buttons to show. Two simultaneous transitions cannot both succeed: the update is applied with `WHERE status = <status we validated against>`.
 
-Every change writes an `IncidentEvent` in the same transaction as the change. Event types so far: `CREATED`, `UPDATED`, `STATUS_CHANGED`, `SEVERITY_CHANGED`, `ASSIGNED`, `UNASSIGNED`, `COMMENT_ADDED`. Deployment, automation and AI events are added by the phases that create them.
+Every change writes an `IncidentEvent` in the same transaction as the change. Event types so far: `CREATED`, `UPDATED`, `STATUS_CHANGED`, `SEVERITY_CHANGED`, `ASSIGNED`, `UNASSIGNED`, `COMMENT_ADDED`, `MONITORING_SIGNAL`, `DEPLOYMENT_LINKED`. Automation and AI events are added by the phases that create them.
 
 ---
 
@@ -116,3 +116,32 @@ All under `/api/v1/orgs/:orgId`.
 | `GET /checks/:id/results`   | `projects.read`   | Newest first. `?limit=` (1-200, default 50) and `?before=<ISO timestamp>`; response has `nextBefore` for the next page.                                                                                                                                          |
 
 Service responses now include `healthStatus` and `healthChangedAt`. Incidents created by monitoring have `source: "MONITORING"`, no `createdBy`, and `SYSTEM` actor events.
+
+---
+
+## Phase 5 routes (GitHub integration)
+
+Under `/api/v1/orgs/:orgId` unless stated. Integrations need `INTEGRATION_ENCRYPTION_KEY`; without it creating one returns 503 `INTEGRATIONS_NOT_CONFIGURED`.
+
+| Method and path                               | Permission            | Notes                                                                                                                                                                                                                                |
+| --------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /integrations/github`                    | `projects.read`       | Active integrations. Never includes a secret.                                                                                                                                                                                        |
+| `POST /integrations/github`                   | `integrations.manage` | Body `{ repoFullName, projectId, serviceId? }`. **201** with `webhookPath` and `webhookSecret`: the only time the secret is ever returned. 404 for a project or service outside the organization, 409 `INTEGRATION_EXISTS`.          |
+| `DELETE /integrations/github/:id`             | `integrations.manage` | 204. Disables it (history is kept); 404 if already disabled.                                                                                                                                                                         |
+| `GET /deployments`                            | `projects.read`       | Newest first. `?serviceId=` and `?limit=` (1-100, default 25).                                                                                                                                                                       |
+| `GET /incidents/:id/deployments`              | `incidents.read`      | `{ linked, suggested }`. Suggestions are successful deployments to the incident's service in the 120 minutes before it began, not yet linked (at most 5).                                                                            |
+| `POST /incidents/:id/deployments`             | `incidents.update`    | Body `{ deploymentId, relation?: "SUSPECTED" \| "CONFIRMED" }` (default `SUSPECTED`). **201**. Writes a `DEPLOYMENT_LINKED` timeline event in the same transaction. 404 for another organization's deployment, 409 `ALREADY_LINKED`. |
+| `POST /api/v1/webhooks/github/:integrationId` | none (signature)      | See below. **202** `{ status: "accepted" \| "duplicate" \| "ignored" }`.                                                                                                                                                             |
+
+### The webhook endpoint
+
+Configure GitHub with the payload URL, content type `application/json`, the secret, and the **Deployment statuses** event. Authentication is `X-Hub-Signature-256`: an HMAC-SHA256 of the raw body keyed with the integration's secret.
+
+| Response | Meaning                                                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 202      | `accepted` (stored and queued), `duplicate` (this delivery id was already received), or `ignored` (an event type NEXUS does not use; not stored). |
+| 400      | Signed, but not `application/json`, or the delivery/event headers are missing or malformed.                                                       |
+| 401      | Missing or invalid signature. Nothing is stored.                                                                                                  |
+| 404      | Unknown or disabled integration (the two are indistinguishable).                                                                                  |
+| 429      | Too many requests from this address, or too many bad signatures for this integration from this address.                                           |
+| 503      | Integrations are not configured, or the queue is unavailable (nothing was kept, so GitHub's redelivery is processed).                             |

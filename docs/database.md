@@ -125,7 +125,7 @@ Every child references its parent through a composite foreign key `(organization
 
 `Organization.incidentCounter` is incremented with a single atomic `UPDATE` inside the incident-creation transaction. The row lock serialises concurrent creation, and a rollback also rolls the counter back, so numbers are gap-free and never reused. A test creates eight incidents concurrently and asserts `1..8`.
 
-Not yet implemented from the design above: `MonitoringCheck`/`MonitoringResult`, `Deployment`, `GitHubIntegration`, `WebhookEvent`, automation, `Notification`, knowledge, `AIInvestigation`, `AuditLog` and `ApiKey`.
+Not yet implemented from the design above: automation, `Notification`, knowledge, `AIInvestigation`, `AuditLog` and `ApiKey`.
 
 ---
 
@@ -144,3 +144,17 @@ Migration `20260919180000_monitoring`.
 `failureReason` is stored as text drawn from the closed set `FAILURE_REASONS` in `@nexus/shared` (`timeout`, `dns_failure`, `connection_refused`, `connection_reset`, `tls_error`, `unexpected_status`, `blocked_address`, `invalid_url`, `request_error`).
 
 Results are deleted after `MONITORING_RESULT_RETENTION_DAYS` (default 30) by an hourly maintenance job; a service's health and its incidents are unaffected. At high volume `MonitoringResult` is the table to partition by `checkedAt`; not needed yet.
+
+---
+
+## Phase 5 as implemented
+
+Migration `20260920100000_github_integration`. All four tables use the same composite tenant-safe foreign keys as Phase 3.
+
+- **`GitHubIntegration`**: `repoFullName`, `projectId`, optional `serviceId`, `webhookSecretEncrypted` (AES-256-GCM, bound to the row id), `status` (`ACTIVE`/`DISABLED`), `lastEventAt`. A **partial unique index** allows one ACTIVE integration per repository (case-insensitive) per organisation. Integrations are disabled, never deleted.
+- **`WebhookEvent`**: only signature-verified deliveries. `deliveryId` is unique **per integration** (a deliberate change from the Phase 0 sketch, which had `(provider, deliveryId)`), `payload` jsonb, `status` (`RECEIVED`, `PROCESSED`, `FAILED`, `IGNORED`), `error`. Deleted after `WEBHOOK_RETENTION_DAYS`.
+- **`Deployment`**: unique per `(integrationId, externalId)`; `status` (`PENDING`, `IN_PROGRESS`, `SUCCESS`, `FAILURE`, `INACTIVE`), `startedAt`, `deployedAt` (first success), `statusUpdatedAt` (newest status applied). CHECK constraints on the commit sha and text lengths.
+- **`IncidentDeployment`**: primary key `(incidentId, deploymentId)`, `relation` (`SUSPECTED`/`CONFIRMED`), `linkedById`. The database refuses a link between an incident and a deployment of different organisations.
+- `IncidentEventType` gains `DEPLOYMENT_LINKED`.
+
+Not stored, on purpose: commit messages (`deployment_status` does not carry them) and events of types NEXUS does not use.

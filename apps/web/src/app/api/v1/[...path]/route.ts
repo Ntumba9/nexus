@@ -8,7 +8,18 @@ import { loadEnv, webEnvSchema } from '@nexus/config';
  */
 export const dynamic = 'force-dynamic';
 
-const FORWARDED_REQUEST_HEADERS = ['content-type', 'cookie', 'origin', 'user-agent', 'accept'];
+const FORWARDED_REQUEST_HEADERS = [
+  'content-type',
+  'cookie',
+  'origin',
+  'user-agent',
+  'accept',
+  // GitHub webhooks are authenticated by these (see the API's webhook controller). The body is
+  // forwarded byte for byte below, which the signature check requires.
+  'x-hub-signature-256',
+  'x-github-delivery',
+  'x-github-event',
+];
 const RETURNED_RESPONSE_HEADERS = ['content-type', 'retry-after', 'x-request-id'];
 
 async function proxy(

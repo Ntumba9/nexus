@@ -2,11 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 4 complete (monitoring).** Accounts, organizations, RBAC, projects, services,
-> incident management, the dashboard and HTTP monitoring with automatic incident creation are built
-> and tested in CI (unit, API and worker integration against real PostgreSQL and Redis, and
-> Playwright end-to-end). GitHub, automation, real-time updates, the knowledge base and AI are **not
-> built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
+> **Status: Phase 5 complete (GitHub integration).** Accounts, organizations, RBAC, projects, services,
+> incident management, the dashboard, HTTP monitoring with automatic incident creation, and GitHub
+> deployments linked to incidents are built and tested in CI (unit, API and worker integration against
+> real PostgreSQL and Redis, and Playwright end-to-end). Automation, real-time updates, the knowledge
+> base and AI are **not built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
 
 ## What it is
 
@@ -33,6 +33,7 @@ useful when the AI provider is unavailable.
 - HTTP health monitoring: per-service checks with an expected status, timeout, interval and failure/recovery thresholds. A service is only DOWN after N consecutive failures (never on one blip); it then opens exactly one incident (severity configurable), and recovery is recorded on that incident but left for a human to resolve. "Check now", result history with failure reasons, and result retention
 - Background workers on Redis + BullMQ: a database-driven scheduler that is safe with several workers, idempotent check execution, retries, and an hourly retention job
 - SSRF-safe monitoring: checks cannot be pointed at localhost, private networks or cloud-metadata addresses (validated when saved and again on every request with DNS pinning), redirects are never followed and response bodies are never read
+- GitHub integration: connect a repository, and NEXUS records the deployments GitHub reports. Deliveries are authenticated by an HMAC signature over the raw body, deduplicated, and processed idempotently by a worker; secrets are shown once and stored encrypted. For an incident, recent successful deployments to the same service are suggested as possible causes, and a person can link one as suspected or confirmed (recorded on the timeline)
 - Overview dashboard built from real data: active incidents by severity, service health (real once checks exist; "not monitored" otherwise), 14-day trend, recent incidents and activity
 - Authenticated web app shell (dark UI): login, register, onboarding, dashboard, projects, services, incidents, settings and members, with loading, error and empty states
 - Tenant isolation enforced by the database as well as the application (composite foreign keys), proven by cross-tenant tests that bypass the API with raw SQL
@@ -164,6 +165,8 @@ process with a message naming the variable (never its value). See [.env.example]
 | `TRUST_PROXY_HOPS`                                                    | api          | reverse-proxy hops to trust for client IP (0)                                                                                                              |
 | `MONITORING_ALLOW_PRIVATE_NETWORKS`                                   | api, workers | `false` (default) refuses checks against localhost/private/metadata addresses; `true` is an operator opt-in (dev, self-hosting). Keep both processes equal |
 | `MONITORING_DISPATCH_INTERVAL_MS`, `MONITORING_RESULT_RETENTION_DAYS` | workers      | defaults `5000` ms and `30` days                                                                                                                           |
+| `INTEGRATION_ENCRYPTION_KEY`                                          | api          | base64 of 32 random bytes (`openssl rand -base64 32`). Integrations are disabled while unset. Losing it makes existing integrations unusable               |
+| `WEBHOOK_RETENTION_DAYS`                                              | workers      | stored webhook deliveries are deleted after this many days (default `30`); deployments are kept                                                            |
 | `COOKIE_SECURE`                                                       | api          | session cookie `Secure`; default: production                                                                                                               |
 | `SESSION_IDLE_TTL_HOURS`, `SESSION_ABSOLUTE_TTL_DAYS`                 | api          | defaults `168` hours, `30` days                                                                                                                            |
 | `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`               | api          | defaults `10` per `900` s per account                                                                                                                      |
@@ -233,8 +236,8 @@ local development fallback; no paid embedding provider is configured.
 | 2     | Auth, organisations, RBAC                     | Done    |
 | 3     | Projects, services, incidents, dashboard      | Done    |
 | 4     | Monitoring and workers                        | Done    |
-| 5     | GitHub integration                            | Next    |
-| 6     | Automation and notifications                  | Planned |
+| 5     | GitHub integration                            | Done    |
+| 6     | Automation and notifications                  | Next    |
 | 7     | Real-time                                     | Planned |
 | 8     | Knowledge base and RAG                        | Planned |
 | 9     | AI investigation                              | Planned |

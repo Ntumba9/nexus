@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { roleHasPermission } from '@nexus/shared';
+import { DeploymentsList } from '@/components/github/deployments-list';
 import { ServiceMonitoring } from '@/components/monitoring/service-monitoring';
 import { EnvironmentBadge, HealthBadge } from '@/components/ui/badges';
 import { getOrganization, getService } from '@/lib/server-api';
@@ -43,6 +44,12 @@ export default async function ServicePage({
           serviceId={serviceId}
           canManage={roleHasPermission(org.role, 'services.manage') && !service.archivedAt}
         />
+      </section>
+      <section aria-labelledby="deployments-heading" className="space-y-4">
+        <h2 id="deployments-heading" className="text-lg font-medium">
+          Deployments
+        </h2>
+        <DeploymentsList orgId={orgId} serviceId={serviceId} limit={10} />
       </section>
     </div>
   );

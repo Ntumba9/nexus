@@ -58,11 +58,12 @@ Controller (thin: parse, guard, call)  →  Service / use case (business rules)
 5. Automation engine / built-in rule creates an incident. A partial unique index guarantees at most one active auto-created incident per service, so races cannot create duplicates.
 6. The incident service writes an `IncidentEvent`, emits SSE, enqueues `notification` jobs.
 
-### 3.2 GitHub webhook
+### 3.2 GitHub webhook _(implemented in Phase 5; see ADR-012)_
 
-1. `POST /api/v1/integrations/github/webhook` reads the **raw body**, verifies `X-Hub-Signature-256` with constant-time comparison against the per-integration secret.
-2. Stores `WebhookEvent` with unique `(provider, deliveryId)`; duplicate deliveries are acknowledged and dropped (idempotency).
-3. Responds 202 quickly; `webhook-processing` job normalises push/PR/deployment events into `Deployment` / commit records and links them to services and open incidents by time window and repository.
+1. `POST /api/v1/webhooks/github/:integrationId` reads the **raw body** and verifies `X-Hub-Signature-256` (HMAC-SHA256, constant-time) against that integration's secret, which is stored AES-256-GCM encrypted. A bad signature is answered 401 and nothing is stored.
+2. A verified `deployment_status` or `ping` delivery is stored as a `WebhookEvent`, unique per `(integration, deliveryId)`; a redelivery is acknowledged as a duplicate. Other event types are acknowledged and not stored.
+3. It responds 202 quickly and enqueues a `webhook-processing` job. The worker upserts a `Deployment` (unique per integration and GitHub deployment id, ignoring out-of-order statuses) and marks the event processed.
+4. Deployments are suggested on incidents for the same service shortly before they began, and a person links them (`SUSPECTED` or `CONFIRMED`), which is recorded on the timeline. Push and pull-request events are not normalised yet.
 
 ### 3.3 Incident lifecycle
 

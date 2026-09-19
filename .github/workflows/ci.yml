@@ -92,6 +92,8 @@ jobs:
       # The monitoring E2E watches a service on 127.0.0.1, which is refused unless the operator opts in.
       MONITORING_ALLOW_PRIVATE_NETWORKS: 'true'
       MONITORING_DISPATCH_INTERVAL_MS: '1000'
+      # Enables GitHub integrations. A throwaway key for CI only; it protects nothing.
+      INTEGRATION_ENCRYPTION_KEY: 'Y2ktb25seS1rZXktMzItYnl0ZXMtbG9uZy1vaw0hSAI='
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -1,5 +1,8 @@
 import type {
   DashboardDto,
+  DeploymentDto,
+  GitHubIntegrationDto,
+  IncidentDeploymentsDto,
   IncidentDetailDto,
   IncidentEventDto,
   IncidentPageDto,
@@ -23,6 +26,10 @@ export const keys = {
   members: (orgId: string) => ['members', orgId] as const,
   checks: (orgId: string, serviceId: string) => ['checks', orgId, serviceId] as const,
   results: (orgId: string, checkId: string) => ['check-results', orgId, checkId] as const,
+  integrations: (orgId: string) => ['github-integrations', orgId] as const,
+  deployments: (orgId: string, serviceId?: string) =>
+    ['deployments', orgId, serviceId ?? 'all'] as const,
+  incidentDeployments: (orgId: string, id: string) => ['incident-deployments', orgId, id] as const,
 };
 
 export const fetchers = {
@@ -48,6 +55,16 @@ export const fetchers = {
     apiFetch<{ data: MonitoringCheckDto[] }>(`/orgs/${orgId}/services/${serviceId}/checks`).then(
       (r) => r.data,
     ),
+  integrations: (orgId: string) =>
+    apiFetch<{ data: GitHubIntegrationDto[] }>(`/orgs/${orgId}/integrations/github`).then(
+      (r) => r.data,
+    ),
+  deployments: (orgId: string, serviceId?: string, limit = 25) =>
+    apiFetch<{ data: DeploymentDto[] }>(
+      `/orgs/${orgId}/deployments?limit=${limit}${serviceId ? `&serviceId=${serviceId}` : ''}`,
+    ).then((r) => r.data),
+  incidentDeployments: (orgId: string, id: string) =>
+    apiFetch<IncidentDeploymentsDto>(`/orgs/${orgId}/incidents/${id}/deployments`),
   results: (orgId: string, checkId: string, limit = 20) =>
     apiFetch<MonitoringResultPageDto>(`/orgs/${orgId}/checks/${checkId}/results?limit=${limit}`),
 };

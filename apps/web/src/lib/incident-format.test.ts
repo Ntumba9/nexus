@@ -48,6 +48,19 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'MONITORING_SIGNAL', data: {} })).toContain('monitoring change');
   });
 
+  it('describes linked deployments, as suspected or confirmed', () => {
+    const data = { commitSha: 'abcdef1234567', environment: 'production' };
+    expect(
+      describeEvent({ type: 'DEPLOYMENT_LINKED', data: { ...data, relation: 'SUSPECTED' } }),
+    ).toBe('linked deployment abcdef1 to production as a suspected cause');
+    expect(
+      describeEvent({ type: 'DEPLOYMENT_LINKED', data: { ...data, relation: 'CONFIRMED' } }),
+    ).toBe('confirmed deployment abcdef1 to production as the cause');
+    expect(describeEvent({ type: 'DEPLOYMENT_LINKED', data: {} })).toBe(
+      'linked a deployment as a suspected cause',
+    );
+  });
+
   it('never throws on unexpected data', () => {
     expect(describeEvent({ type: 'ASSIGNED', data: {} })).toBe('assigned a member');
     expect(describeEvent({ type: 'UPDATED', data: { fields: 'nope' } })).toBe(

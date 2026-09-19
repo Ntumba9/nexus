@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ApiError, apiFetch, describeError } from '@/lib/api-client';
 import { actionLabel, describeEvent, formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { IncidentDeployments } from '@/components/incidents/incident-deployments';
 
 export function IncidentDetail({
   orgId,
@@ -131,6 +132,18 @@ export function IncidentDetail({
             ) : (
               <p className="text-sm text-muted">No description provided.</p>
             )}
+          </Card>
+
+          <Card
+            title="Deployments"
+            description="Changes shipped to this service shortly before the incident began."
+          >
+            <IncidentDeployments
+              orgId={orgId}
+              incidentId={incidentId}
+              canUpdate={canUpdate}
+              onChanged={refresh}
+            />
           </Card>
 
           <Card title="Timeline" description="Every change to this incident, oldest first.">

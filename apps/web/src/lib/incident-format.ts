@@ -72,6 +72,14 @@ export function describeEvent(event: Pick<IncidentEventDto, 'type' | 'data'>): s
       if (data.kind === 'went_down_again') return `observed that ${check} is failing again`;
       return `observed a monitoring change on ${check}`;
     }
+    case 'DEPLOYMENT_LINKED': {
+      const sha = typeof data.commitSha === 'string' ? data.commitSha.slice(0, 7) : null;
+      const env = typeof data.environment === 'string' ? ` to ${data.environment}` : '';
+      const what = sha ? `deployment ${sha}${env}` : 'a deployment';
+      return data.relation === 'CONFIRMED'
+        ? `confirmed ${what} as the cause`
+        : `linked ${what} as a suspected cause`;
+    }
     default:
       return 'made a change';
   }
