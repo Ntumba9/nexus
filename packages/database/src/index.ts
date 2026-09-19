@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 export { Prisma, PrismaClient } from '@prisma/client';
+export * from './domain-events';
 export * from './incident-writes';
 export * from './service-health';
 

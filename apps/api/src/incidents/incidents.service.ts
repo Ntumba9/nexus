@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { createIncidentRecord, type Prisma, type PrismaClient } from '@nexus/database';
+import {
+  createIncidentRecord,
+  recordIncidentEvent,
+  type Prisma,
+  type PrismaClient,
+} from '@nexus/database';
 import {
   canTransition,
   permissionForTransition,
@@ -367,6 +372,7 @@ export class IncidentsService {
     return toDetailDto(row, tenant.role);
   }
 
+  /** Delegates to the shared writer, so every timeline event also reaches the automation outbox. */
   private recordEvent(
     tx: Tx,
     tenant: TenantContext,
@@ -375,16 +381,12 @@ export class IncidentsService {
     actor: Actor,
     data: Prisma.InputJsonObject,
   ) {
-    return tx.incidentEvent.create({
-      data: {
-        organizationId: tenant.organizationId,
-        incidentId,
-        type,
-        actorType: actor.type,
-        actorId: actor.id,
-        data,
-      },
-      select: eventSelect,
+    return recordIncidentEvent(tx, {
+      organizationId: tenant.organizationId,
+      incidentId,
+      type,
+      actor,
+      data,
     });
   }
 }

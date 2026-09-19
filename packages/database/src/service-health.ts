@@ -1,5 +1,6 @@
 import type { ServiceHealth } from '@prisma/client';
 import { aggregateServiceHealth } from '@nexus/shared';
+import { emitDomainEvent } from './domain-events';
 import type { Tx } from './incident-writes';
 
 export interface HealthChange {
@@ -29,7 +30,7 @@ export async function recomputeServiceHealth(
     }),
     tx.service.findFirst({
       where: { id: serviceId, organizationId },
-      select: { healthStatus: true },
+      select: { healthStatus: true, name: true, projectId: true, environment: true },
     }),
   ]);
   if (!service) return { changed: false, from: 'UNKNOWN', to: 'UNKNOWN' };
@@ -40,6 +41,19 @@ export async function recomputeServiceHealth(
   await tx.service.updateMany({
     where: { id: serviceId, organizationId },
     data: { healthStatus: next, healthChangedAt: now },
+  });
+  await emitDomainEvent(tx, {
+    organizationId,
+    type: 'service.health_changed',
+    subjectId: serviceId,
+    facts: {
+      serviceId,
+      serviceName: service.name,
+      projectId: service.projectId,
+      environment: service.environment,
+      fromHealth: service.healthStatus,
+      toHealth: next,
+    },
   });
   return { changed: true, from: service.healthStatus, to: next };
 }

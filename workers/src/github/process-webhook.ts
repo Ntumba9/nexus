@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@nexus/database';
+import { emitDeploymentStatusEvent, type PrismaClient } from '@nexus/database';
 import { normaliseDeploymentStatus, type WebhookProcessingPayload } from '@nexus/shared';
 
 export type WebhookProcessingOutcome =
@@ -75,7 +75,7 @@ export async function processWebhookEvent(
           externalId: incoming.externalId,
         },
       },
-      select: { id: true, statusUpdatedAt: true, deployedAt: true },
+      select: { id: true, status: true, statusUpdatedAt: true, deployedAt: true },
     });
     let id: string;
     if (!existing) {
@@ -99,6 +99,8 @@ export async function processWebhookEvent(
         select: { id: true },
       });
       id = created.id;
+      // A deployment first seen already finished is announced like one that just finished.
+      await emitDeploymentStatusEvent(tx, payload.organizationId, id);
     } else {
       id = existing.id;
       // Statuses can arrive out of order; only a newer one changes the deployment.
@@ -115,6 +117,10 @@ export async function processWebhookEvent(
           },
           select: { id: true },
         });
+        // Announce a change into SUCCESS or FAILURE, never a repeat of the status it already had.
+        if (incoming.status !== existing.status) {
+          await emitDeploymentStatusEvent(tx, payload.organizationId, id);
+        }
       }
     }
     await tx.webhookEvent.update({
