@@ -55,6 +55,8 @@ model User {
   rulesCreated      AutomationRule[]     @relation("RuleCreatedBy")
   webhooksCreated   OutboundWebhook[]    @relation("WebhookCreatedBy")
   auditEntries      AuditLog[]           @relation("AuditActor")
+  documentsCreated  KnowledgeDocument[]  @relation("DocumentCreatedBy")
+  documentsUpdated  KnowledgeDocument[]  @relation("DocumentUpdatedBy")
 }
 
 model Organization {
@@ -83,6 +85,8 @@ model Organization {
   notifications        Notification[]
   outboundWebhooks     OutboundWebhook[]
   auditLogs            AuditLog[]
+  knowledgeDocuments   KnowledgeDocument[]
+  knowledgeChunks      KnowledgeChunk[]
 }
 
 model OrganizationMember {
@@ -681,4 +685,56 @@ model AuditLog {
 
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([organizationId, action])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 8: knowledge base.
+//
+// Chunks reference their document through a composite foreign key, so a chunk can only ever belong
+// to a document of its own organisation. The vector and full-text search indexes are created in the
+// migration SQL (Prisma cannot express them); every search query filters by organisation first.
+// ---------------------------------------------------------------------------------------------
+
+model KnowledgeDocument {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @db.Uuid
+  title          String
+  slug           String
+  contentMd      String           @default("")
+  tags           String[]         @default([])
+  createdById    String?          @db.Uuid
+  updatedById    String?          @db.Uuid
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User?            @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy      User?            @relation("DocumentUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  chunks         KnowledgeChunk[]
+
+  @@unique([organizationId, slug])
+  @@unique([organizationId, id])
+  @@index([organizationId, updatedAt(sort: Desc)])
+}
+
+/// A searchable piece of a document. `embedding` is only ever read and written with raw SQL.
+model KnowledgeChunk {
+  id             String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                      @db.Uuid
+  documentId     String                      @db.Uuid
+  ordinal        Int
+  /// The document title and the headings above the chunk, searched together with the text.
+  heading        String
+  content        String
+  /// SHA-256 of heading + content: an unchanged chunk keeps its embedding when a document is edited.
+  contentHash    String
+  embedding      Unsupported("vector(384)")?
+  /// Which provider produced the vector. Vectors from different models are never compared.
+  embeddingModel String?
+  embeddedAt     DateTime?                   @db.Timestamptz(6)
+  createdAt      DateTime                    @default(now()) @db.Timestamptz(6)
+  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document       KnowledgeDocument           @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([organizationId, documentId, ordinal])
+  @@index([organizationId, embeddingModel])
 }

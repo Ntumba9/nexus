@@ -643,6 +643,9 @@ export const AUDIT_ACTIONS = [
   'outbound_webhook.disabled',
   'integration.github.created',
   'integration.github.disabled',
+  'knowledge.document.created',
+  'knowledge.document.updated',
+  'knowledge.document.deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

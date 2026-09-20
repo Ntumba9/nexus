@@ -23,6 +23,7 @@ import { actionLabel, describeEvent, formatDateTime, timeAgo } from '@/lib/incid
 import { fetchers, keys } from '@/lib/queries';
 import { pollEvery } from '@/lib/realtime';
 import { IncidentDeployments } from '@/components/incidents/incident-deployments';
+import { RelatedRunbooks } from '@/components/incidents/related-runbooks';
 
 export function IncidentDetail({
   orgId,
@@ -171,6 +172,11 @@ export function IncidentDetail({
           <Card title="Assignees">
             <Assignees orgId={orgId} incident={data} canUpdate={canUpdate} onChanged={refresh} />
           </Card>
+          <RelatedRunbooks
+            orgId={orgId}
+            incidentId={incidentId}
+            canWrite={roleHasPermission(role, 'knowledge.manage')}
+          />
         </aside>
       </div>
     </div>

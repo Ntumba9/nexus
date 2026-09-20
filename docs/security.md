@@ -132,6 +132,7 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 - **Stale role within a request.** A role is read at the start of a request; a change made during that request is not seen until the next one. Ownership safety is unaffected because owner counts are re-read under a row lock.
 - **The audit log covers automation, outbound webhooks, GitHub integrations and incidents opened by automation** (Phase 6). Role changes, member removals and sign-in events are not yet recorded (Phase 10).
 - **Real-time streams.** A stream re-checks membership, role and session every `REALTIME_HEARTBEAT_MS` (15 s by default), so a removed member or a signed-out session can keep an already-open stream for up to one heartbeat (it receives signals only, never data, and every refetch is authorized on its own). A session's idle expiry is not enforced on an open stream, only revocation and the absolute expiry. A user is limited to 10 open streams per API instance.
+- **Knowledge documents are untrusted input** (ADR-015). They are stored and returned verbatim, rendered by a parser that outputs React elements (no `innerHTML`, raw HTML shown as text, only `http(s)`/`mailto` links, long lines shown as plain text), and retrieved only through a function that requires an organization id. Phase 9 must still treat retrieved text as untrusted data inside the model prompt (ADR-006). Search embeds the query, so it is rate limited per user. A deleted document is gone permanently; only the audit entry remains.
 - **Web CSP** is not set (Phase 10). Swagger UI is served without CSP (dev tool; disable with `SWAGGER_ENABLED=false`).
 - **Member add-by-email** lets holders of `users.manage` probe whether an email has an account. Replace with email invitations when email delivery exists.
 
@@ -150,4 +151,5 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 - [x] Audit log with DB-enforced immutability, redaction before write, and coverage of automation, webhooks and integrations (Phase 6)
 - [x] Automation safety valves: cooldown, hourly cap, no automation chains, per-organization limits; recipients and destinations re-checked at run time (Phase 6)
 - [x] Real-time stream: signals only (no data), per-topic permission filtering, per-user notification targeting, continuous membership/session re-check, per-user connection cap (Phase 7)
+- [x] Knowledge base: composite tenant foreign keys, org-scoped retrieval with no unscoped variant, iterative vector scans so tenant filtering is correct, safe rendering, audited writes (Phase 8)
 - [ ] Audit coverage of the rest of the product, web CSP, OpenTelemetry (Phase 10)

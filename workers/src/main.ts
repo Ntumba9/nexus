@@ -1,5 +1,5 @@
 import { loadDotEnv, loadEnv, workerEnvSchema } from '@nexus/config';
-import { createPrismaClient, pingDatabase } from '@nexus/database';
+import { createEmbeddingProvider, createPrismaClient, pingDatabase } from '@nexus/database';
 import { MAINTENANCE_JOBS, QUEUE_NAMES } from '@nexus/shared';
 import { parseEncryptionKey } from '@nexus/shared/webhook-security';
 import { Queue } from 'bullmq';
@@ -12,6 +12,7 @@ import { createActionHandlers } from './automation/actions/handlers';
 import { startAutomationDispatcher } from './automation/dispatcher';
 import { createLogEmailSender } from './automation/email';
 import { createSafePoster } from './automation/safe-post';
+import { knowledgeWorker, startEmbeddingSweep } from './knowledge/embed';
 import { createSmtpEmailSender, createSmtpTransporter } from './automation/smtp';
 import {
   automationWorker,
@@ -63,6 +64,16 @@ async function main(): Promise<void> {
     );
   }
 
+  // Embeddings for the knowledge base. An incomplete EMBEDDING_* configuration fails here, at startup.
+  const embeddings = createEmbeddingProvider({
+    provider: env.EMBEDDING_PROVIDER,
+    apiUrl: env.EMBEDDING_API_URL,
+    apiKey: env.EMBEDDING_API_KEY,
+    model: env.EMBEDDING_MODEL,
+  });
+  logger.info('embedding provider', { provider: embeddings.id });
+  const knowledgeDeps = { prisma, provider: embeddings, logger, realtime };
+
   // One worker per queue; add new queues here as later phases introduce them.
   const workers = [
     createWorker(systemWorker(env.WORKER_CONCURRENCY), connection, logger),
@@ -83,6 +94,7 @@ async function main(): Promise<void> {
       connection,
       logger,
     ),
+    createWorker(knowledgeWorker(knowledgeDeps, env.WORKER_CONCURRENCY), connection, logger),
     createWorker(
       webhookWorker({ prisma, logger, realtime }, env.WORKER_CONCURRENCY),
       connection,
@@ -119,6 +131,9 @@ async function main(): Promise<void> {
     maxExecutionsPerRulePerHour: env.AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR,
     realtime,
   });
+
+  // Safety net for embeddings whose job was never queued or was lost.
+  const embeddingSweep = startEmbeddingSweep({ deps: knowledgeDeps, intervalMs: 30_000 });
 
   // Hourly retention jobs. The job id is derived from the hour, so with several workers only one
   // job per hour is ever created.
@@ -165,6 +180,7 @@ async function main(): Promise<void> {
     clearInterval(cleanupTimer);
     await dispatcher.stop();
     await automationDispatcher.stop();
+    await embeddingSweep.stop();
     // close() waits for in-flight jobs to finish before resolving.
     await Promise.all(workers.map((worker) => worker.close()));
     await Promise.all([

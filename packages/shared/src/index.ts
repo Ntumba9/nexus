@@ -5,6 +5,8 @@ export * from './dashboard';
 export * from './github';
 export * from './health';
 export * from './incidents';
+export * from './knowledge';
+export * from './knowledge-text';
 export * from './monitoring';
 export * from './permissions';
 export * from './projects';

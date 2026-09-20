@@ -68,3 +68,44 @@ describe('session and rate-limit settings', () => {
     expect(() => loadEnv(apiEnvSchema, { ...base, COOKIE_SECURE: 'yes' })).toThrow(/COOKIE_SECURE/);
   });
 });
+
+describe('embedding configuration', () => {
+  it('defaults to the built-in local provider, for the api and the worker', () => {
+    for (const schema of [apiEnvSchema, workerEnvSchema]) {
+      const env = loadEnv(schema, valid);
+      expect(env.EMBEDDING_PROVIDER).toBe('local');
+      expect(env.EMBEDDING_API_URL).toBeUndefined();
+      expect(env.EMBEDDING_API_KEY).toBeUndefined();
+    }
+  });
+
+  it('accepts an OpenAI-compatible endpoint and trims the secret', () => {
+    const env = loadEnv(workerEnvSchema, {
+      ...valid,
+      EMBEDDING_PROVIDER: 'openai',
+      EMBEDDING_API_URL: 'http://localhost:11434/v1',
+      EMBEDDING_MODEL: ' all-minilm ',
+      EMBEDDING_API_KEY: '  sk-test  ',
+    });
+    expect(env.EMBEDDING_MODEL).toBe('all-minilm');
+    expect(env.EMBEDDING_API_KEY).toBe('sk-test');
+  });
+
+  it('rejects an unknown provider and a non-http URL, without echoing the key', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...valid, EMBEDDING_PROVIDER: 'magic' })).toThrow(
+      /EMBEDDING_PROVIDER/,
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...valid, EMBEDDING_API_URL: 'ftp://x' })).toThrow(
+      /EMBEDDING_API_URL/,
+    );
+    try {
+      loadEnv(apiEnvSchema, {
+        ...valid,
+        EMBEDDING_PROVIDER: 'nope',
+        EMBEDDING_API_KEY: 'sk-super-secret',
+      });
+    } catch (error) {
+      expect(String(error)).not.toContain('sk-super-secret');
+    }
+  });
+});

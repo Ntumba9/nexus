@@ -111,6 +111,9 @@ const AUDIT_VERB: Record<AuditAction, string> = {
   'outbound_webhook.disabled': 'disabled the outbound webhook',
   'integration.github.created': 'connected the GitHub repository',
   'integration.github.disabled': 'disconnected the GitHub repository',
+  'knowledge.document.created': 'created the document',
+  'knowledge.document.updated': 'edited the document',
+  'knowledge.document.deleted': 'deleted the document',
 };
 
 /** "created the automation rule “Critical incident alert”". */
@@ -120,10 +123,12 @@ export function describeAudit(entry: Pick<AuditLogDto, 'action' | 'metadata'>): 
   const subject =
     typeof meta.name === 'string'
       ? meta.name
-      : typeof meta.repository === 'string'
-        ? meta.repository
-        : typeof meta.incidentNumber === 'number'
-          ? `INC-${meta.incidentNumber}`
-          : null;
+      : typeof meta.title === 'string'
+        ? meta.title
+        : typeof meta.repository === 'string'
+          ? meta.repository
+          : typeof meta.incidentNumber === 'number'
+            ? `INC-${meta.incidentNumber}`
+            : null;
   return subject ? `${verb} “${subject}”` : verb;
 }

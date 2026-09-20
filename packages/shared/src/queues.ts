@@ -15,6 +15,8 @@ export const QUEUE_NAMES = {
   webhookProcessing: 'webhook-processing',
   /** One job per automation execution (a rule matched an event). */
   automation: 'automation',
+  /** One job per knowledge document whose chunks need embedding. */
+  knowledge: 'knowledge',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -22,6 +24,7 @@ export const SYSTEM_JOBS = { ping: 'ping' } as const;
 export const HEALTH_CHECK_JOBS = { run: 'run' } as const;
 export const WEBHOOK_JOBS = { process: 'process' } as const;
 export const AUTOMATION_JOBS = { execute: 'execute' } as const;
+export const KNOWLEDGE_JOBS = { embed: 'embed' } as const;
 export const MAINTENANCE_JOBS = {
   cleanupResults: 'cleanup-results',
   cleanupWebhooks: 'cleanup-webhooks',

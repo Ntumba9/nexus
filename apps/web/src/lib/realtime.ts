@@ -38,6 +38,12 @@ export function queryKeysForTopic(orgId: string, topic: RealtimeTopic): (readonl
       return [keys.notifications(orgId), keys.unread(orgId)];
     case 'members':
       return [keys.members(orgId)];
+    case 'knowledge':
+      return [
+        ['knowledge', orgId],
+        ['knowledge-search', orgId],
+        ['incident-runbooks', orgId],
+      ];
     case 'organization':
       return [];
   }

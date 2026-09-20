@@ -46,6 +46,25 @@ const databaseUrl = urlWithProtocol(['postgresql:', 'postgres:'], 'PostgreSQL');
 const redisUrl = urlWithProtocol(['redis:', 'rediss:'], 'Redis');
 const httpUrl = urlWithProtocol(['http:', 'https:'], 'HTTP(S)');
 
+/**
+ * Knowledge-base embeddings (Phase 8). `local` needs nothing and is the default. `openai` calls any
+ * OpenAI-compatible `/embeddings` endpoint (a local Ollama, or a free hosted tier) and needs a model
+ * that returns 384-dimension vectors. The api and the worker must use the same provider.
+ */
+const embeddingEnv = {
+  EMBEDDING_PROVIDER: z.enum(['local', 'openai']).default('local'),
+  EMBEDDING_API_URL: httpUrl.optional(),
+  EMBEDDING_MODEL: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  /** Secret. Read only from the environment; never logged or returned. */
+  EMBEDDING_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+};
+
 export const apiEnvSchema = z.object({
   ...baseEnv,
   DATABASE_URL: databaseUrl,
@@ -76,6 +95,7 @@ export const apiEnvSchema = z.object({
   AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86400).default(900),
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
   INTEGRATION_ENCRYPTION_KEY: encryptionKey,
+  ...embeddingEnv,
   /**
    * How often an open real-time stream sends a keep-alive and re-checks that its member and session
    * are still valid. Keep it below any proxy's idle timeout (nginx defaults to 60 s).
@@ -94,6 +114,7 @@ export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
 export const workerEnvSchema = z.object({
   ...baseEnv,
+  ...embeddingEnv,
   DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,

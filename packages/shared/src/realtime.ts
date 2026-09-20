@@ -19,6 +19,7 @@ export const REALTIME_TOPICS = [
   'notifications',
   'members',
   'organization',
+  'knowledge',
 ] as const;
 export const realtimeTopicSchema = z.enum(REALTIME_TOPICS);
 export type RealtimeTopic = z.infer<typeof realtimeTopicSchema>;
@@ -38,6 +39,7 @@ export const TOPIC_PERMISSION: Readonly<Record<RealtimeTopic, Permission>> = {
   notifications: 'organization.read',
   members: 'users.read',
   organization: 'organization.read',
+  knowledge: 'knowledge.read',
 };
 
 export const realtimeMessageSchema = z.object({
@@ -117,6 +119,7 @@ const SEGMENT_TOPICS: Readonly<Record<string, RealtimeTopic>> = {
   'outbound-webhooks': 'automation',
   notifications: 'notifications',
   members: 'members',
+  knowledge: 'knowledge',
 };
 
 /**

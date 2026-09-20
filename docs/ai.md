@@ -1,6 +1,6 @@
 # NEXUS AI Architecture
 
-Status: Phase 0 design (implemented in Phases 8–9).
+Status: the RAG half is implemented (Phase 8, see [ADR-015](decisions/ADR-015-knowledge-base-and-retrieval.md)); the investigation pipeline is Phase 9.
 
 AI is an assistant inside NEXUS, not the product. If the provider is down or unconfigured, the "Investigate" button is disabled with an explanation and everything else works.
 
@@ -52,5 +52,5 @@ Retrieved documents, commit messages, incident text and monitoring bodies are at
 
 - Chunking: Markdown-aware, heading-based, ~500 tokens, small overlap; `content_hash` avoids re-embedding unchanged chunks.
 - Storage: pgvector column on `KnowledgeChunk`.
-- Embeddings: behind an `EmbeddingProvider` interface. Anthropic does not offer a first-party embeddings endpoint, so the provider is configurable (env); a deterministic local provider is used for dev/tests, and retrieval can fall back to Postgres full-text search. This is recorded in ADR-006.
+- Implemented in Phase 8. Embeddings: behind an `EmbeddingProvider` interface. Anthropic does not offer a first-party embeddings endpoint, so the provider is configurable (env); a deterministic local provider is used for dev/tests, and retrieval can fall back to Postgres full-text search. This is recorded in ADR-006.
 - Isolation: the retrieval function signature requires `organizationId`; there is no unscoped variant.
