@@ -1,4 +1,5 @@
 import type {
+  AiStatusDto,
   AuditLogPageDto,
   AutomationRuleDto,
   DashboardDto,
@@ -9,6 +10,7 @@ import type {
   IncidentDetailDto,
   IncidentEventDto,
   IncidentPageDto,
+  InvestigationDto,
   KnowledgeDocumentDto,
   KnowledgeDocumentSummaryDto,
   KnowledgeSearchResultDto,
@@ -48,6 +50,8 @@ export const keys = {
   knowledgeDoc: (orgId: string, id: string) => ['knowledge', orgId, 'doc', id] as const,
   knowledgeSearch: (orgId: string, q: string) => ['knowledge-search', orgId, q] as const,
   incidentRunbooks: (orgId: string, id: string) => ['incident-runbooks', orgId, id] as const,
+  aiStatus: (orgId: string) => ['ai', orgId, 'status'] as const,
+  investigations: (orgId: string, id: string) => ['ai', orgId, 'investigations', id] as const,
 };
 
 export const fetchers = {
@@ -115,6 +119,11 @@ export const fetchers = {
     ),
   incidentRunbooks: (orgId: string, id: string) =>
     apiFetch<KnowledgeSearchResultDto>(`/orgs/${orgId}/knowledge/for-incident/${id}`),
+  aiStatus: (orgId: string) => apiFetch<AiStatusDto>(`/orgs/${orgId}/ai/status`),
+  investigations: (orgId: string, id: string) =>
+    apiFetch<{ data: InvestigationDto[] }>(`/orgs/${orgId}/incidents/${id}/investigations`).then(
+      (r) => r.data,
+    ),
   results: (orgId: string, checkId: string, limit = 20) =>
     apiFetch<MonitoringResultPageDto>(`/orgs/${orgId}/checks/${checkId}/results?limit=${limit}`),
 };

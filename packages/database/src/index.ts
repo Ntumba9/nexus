@@ -24,3 +24,5 @@ export function createPrismaClient(databaseUrl: string): PrismaClient {
 export async function pingDatabase(client: PrismaClient): Promise<void> {
   await client.$queryRaw`SELECT 1`;
 }
+export * from './ai/providers';
+export * from './ai/context';

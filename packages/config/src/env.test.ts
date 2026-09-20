@@ -69,6 +69,45 @@ describe('session and rate-limit settings', () => {
   });
 });
 
+describe('AI configuration', () => {
+  it('defaults to the built-in rule-based analysis for the api and the worker', () => {
+    for (const schema of [apiEnvSchema, workerEnvSchema]) {
+      const env = loadEnv(schema, valid);
+      expect(env.AI_PROVIDER).toBe('rules');
+      expect(env.AI_API_KEY).toBeUndefined();
+    }
+  });
+
+  it('accepts an OpenAI-compatible endpoint, trims the secret and can be switched off', () => {
+    const env = loadEnv(workerEnvSchema, {
+      ...valid,
+      AI_PROVIDER: 'openai',
+      AI_API_URL: 'https://api.groq.com/openai/v1',
+      AI_MODEL: ' llama-3.1-8b-instant ',
+      AI_VENDOR: ' Groq ',
+      AI_API_KEY: '  gsk-test  ',
+    });
+    expect(env).toMatchObject({
+      AI_MODEL: 'llama-3.1-8b-instant',
+      AI_VENDOR: 'Groq',
+      AI_API_KEY: 'gsk-test',
+    });
+    expect(loadEnv(apiEnvSchema, { ...valid, AI_PROVIDER: 'none' }).AI_PROVIDER).toBe('none');
+  });
+
+  it('rejects an unknown provider and a non-http URL without echoing the key', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...valid, AI_PROVIDER: 'anthropic' })).toThrow(
+      /AI_PROVIDER/,
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...valid, AI_API_URL: 'ftp://x' })).toThrow(/AI_API_URL/);
+    try {
+      loadEnv(apiEnvSchema, { ...valid, AI_PROVIDER: 'nope', AI_API_KEY: 'gsk-super-secret' });
+    } catch (error) {
+      expect(String(error)).not.toContain('gsk-super-secret');
+    }
+  });
+});
+
 describe('embedding configuration', () => {
   it('defaults to the built-in local provider, for the api and the worker', () => {
     for (const schema of [apiEnvSchema, workerEnvSchema]) {

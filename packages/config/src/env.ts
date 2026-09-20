@@ -65,6 +65,32 @@ const embeddingEnv = {
     .transform((value) => value?.trim() || undefined),
 };
 
+/**
+ * AI investigation (Phase 9). `rules` (the default) is the built-in rule-based analysis: free, offline,
+ * no key. `openai` calls any OpenAI-compatible `/chat/completions` endpoint: a local Ollama, or a free
+ * hosted tier (Groq, Google Gemini's OpenAI endpoint, OpenRouter). `none` turns the feature off.
+ * The api and the worker must agree.
+ */
+const aiEnv = {
+  AI_PROVIDER: z.enum(['rules', 'openai', 'none']).default('rules'),
+  AI_API_URL: httpUrl.optional(),
+  AI_MODEL: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  /** Optional name shown next to the model, for example "Ollama" or "Groq". */
+  AI_VENDOR: z
+    .string()
+    .max(40)
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  /** Secret. Read only from the environment; never logged, stored or returned. */
+  AI_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+};
+
 export const apiEnvSchema = z.object({
   ...baseEnv,
   DATABASE_URL: databaseUrl,
@@ -96,6 +122,7 @@ export const apiEnvSchema = z.object({
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
   INTEGRATION_ENCRYPTION_KEY: encryptionKey,
   ...embeddingEnv,
+  ...aiEnv,
   /**
    * How often an open real-time stream sends a keep-alive and re-checks that its member and session
    * are still valid. Keep it below any proxy's idle timeout (nginx defaults to 60 s).
@@ -115,6 +142,7 @@ export type ApiEnv = z.infer<typeof apiEnvSchema>;
 export const workerEnvSchema = z.object({
   ...baseEnv,
   ...embeddingEnv,
+  ...aiEnv,
   DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,

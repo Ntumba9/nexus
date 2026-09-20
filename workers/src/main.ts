@@ -1,5 +1,10 @@
 import { loadDotEnv, loadEnv, workerEnvSchema } from '@nexus/config';
-import { createEmbeddingProvider, createPrismaClient, pingDatabase } from '@nexus/database';
+import {
+  createAnalysisProvider,
+  createEmbeddingProvider,
+  createPrismaClient,
+  pingDatabase,
+} from '@nexus/database';
 import { MAINTENANCE_JOBS, QUEUE_NAMES } from '@nexus/shared';
 import { parseEncryptionKey } from '@nexus/shared/webhook-security';
 import { Queue } from 'bullmq';
@@ -12,6 +17,7 @@ import { createActionHandlers } from './automation/actions/handlers';
 import { startAutomationDispatcher } from './automation/dispatcher';
 import { createLogEmailSender } from './automation/email';
 import { createSafePoster } from './automation/safe-post';
+import { investigationWorker } from './ai/investigate';
 import { knowledgeWorker, startEmbeddingSweep } from './knowledge/embed';
 import { createSmtpEmailSender, createSmtpTransporter } from './automation/smtp';
 import {
@@ -74,6 +80,16 @@ async function main(): Promise<void> {
   logger.info('embedding provider', { provider: embeddings.id });
   const knowledgeDeps = { prisma, provider: embeddings, logger, realtime };
 
+  // AI investigation. `none` disables it; an incomplete AI_* configuration fails here, at startup.
+  const analysis = createAnalysisProvider({
+    provider: env.AI_PROVIDER,
+    apiUrl: env.AI_API_URL,
+    apiKey: env.AI_API_KEY,
+    model: env.AI_MODEL,
+    vendor: env.AI_VENDOR,
+  });
+  logger.info('ai provider', { provider: analysis?.id ?? 'none' });
+
   // One worker per queue; add new queues here as later phases introduce them.
   const workers = [
     createWorker(systemWorker(env.WORKER_CONCURRENCY), connection, logger),
@@ -95,6 +111,19 @@ async function main(): Promise<void> {
       logger,
     ),
     createWorker(knowledgeWorker(knowledgeDeps, env.WORKER_CONCURRENCY), connection, logger),
+    // Only when enabled: with AI_PROVIDER=none nothing consumes (or accepts) investigation jobs.
+    ...(analysis
+      ? [
+          createWorker(
+            investigationWorker(
+              { prisma, provider: analysis, embeddings, logger, realtime },
+              Math.min(env.WORKER_CONCURRENCY, 2),
+            ),
+            connection,
+            logger,
+          ),
+        ]
+      : []),
     createWorker(
       webhookWorker({ prisma, logger, realtime }, env.WORKER_CONCURRENCY),
       connection,

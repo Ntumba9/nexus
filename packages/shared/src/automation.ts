@@ -646,6 +646,7 @@ export const AUDIT_ACTIONS = [
   'knowledge.document.created',
   'knowledge.document.updated',
   'knowledge.document.deleted',
+  'ai.investigation.requested',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

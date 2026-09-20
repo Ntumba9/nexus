@@ -22,6 +22,7 @@ import { ApiError, apiFetch, describeError } from '@/lib/api-client';
 import { actionLabel, describeEvent, formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
 import { pollEvery } from '@/lib/realtime';
+import { AiInvestigation } from '@/components/incidents/ai-investigation';
 import { IncidentDeployments } from '@/components/incidents/incident-deployments';
 import { RelatedRunbooks } from '@/components/incidents/related-runbooks';
 
@@ -135,6 +136,8 @@ export function IncidentDetail({
               <p className="text-sm text-muted">No description provided.</p>
             )}
           </Card>
+
+          <AiInvestigation orgId={orgId} incidentId={incidentId} canRun={canUpdate} />
 
           <Card
             title="Deployments"

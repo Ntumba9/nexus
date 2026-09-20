@@ -57,6 +57,7 @@ model User {
   auditEntries      AuditLog[]           @relation("AuditActor")
   documentsCreated  KnowledgeDocument[]  @relation("DocumentCreatedBy")
   documentsUpdated  KnowledgeDocument[]  @relation("DocumentUpdatedBy")
+  investigations    AiInvestigation[]    @relation("InvestigationRequestedBy")
 }
 
 model Organization {
@@ -87,6 +88,7 @@ model Organization {
   auditLogs            AuditLog[]
   knowledgeDocuments   KnowledgeDocument[]
   knowledgeChunks      KnowledgeChunk[]
+  investigations       AiInvestigation[]
 }
 
 model OrganizationMember {
@@ -182,6 +184,7 @@ enum IncidentEventType {
   MONITORING_SIGNAL
   DEPLOYMENT_LINKED
   AUTOMATION_EXECUTED
+  AI_INVESTIGATED
 }
 
 enum ActorType {
@@ -261,6 +264,7 @@ model Incident {
   assignments    IncidentAssignment[]
   tags           IncidentTag[]
   deployments    IncidentDeployment[]
+  investigations AiInvestigation[]
 
   @@unique([organizationId, number])
   @@unique([organizationId, id])
@@ -737,4 +741,53 @@ model KnowledgeChunk {
 
   @@index([organizationId, documentId, ordinal])
   @@index([organizationId, embeddingModel])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 9: AI investigation (ADR-016).
+//
+// An investigation stores the exact material it was given (`context`) next to its verified answer
+// (`output`), so every citation can be opened and read later. It references its incident through the
+// composite tenant key. At most one investigation per incident can be active at a time (a partial
+// unique index in the migration SQL).
+// ---------------------------------------------------------------------------------------------
+
+enum InvestigationStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model AiInvestigation {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String              @db.Uuid
+  incidentId       String              @db.Uuid
+  requestedById    String?             @db.Uuid
+  status           InvestigationStatus @default(QUEUED)
+  /// What the person asked, if anything. Untrusted text; only ever shown escaped.
+  question         String?
+  providerId       String
+  /// The provider as a person would name it ("llama3.1 (Ollama)"), kept even if configuration changes.
+  providerLabel    String
+  /// The sources the analysis saw (ContextSource[]). Redacted and length-limited before it is stored.
+  context          Json                @default("[]")
+  /// The verified answer (InvestigationOutput). Set only when SUCCEEDED.
+  output           Json?
+  droppedCitations Int                 @default(0)
+  droppedClaims    Int                 @default(0)
+  downgradedCauses Int                 @default(0)
+  truncated        Boolean             @default(false)
+  /// A short, safe reason. Never a provider message, a URL or a key.
+  error            String?
+  attempts         Int                 @default(0)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(6)
+  startedAt        DateTime?           @db.Timestamptz(6)
+  finishedAt       DateTime?           @db.Timestamptz(6)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  incident         Incident            @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy      User?               @relation("InvestigationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, incidentId, createdAt(sort: Desc)])
 }

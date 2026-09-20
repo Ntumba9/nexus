@@ -4,7 +4,7 @@ import { createPrismaClient, type PrismaClient } from '@nexus/database';
 import { QUEUE_NAMES } from '@nexus/shared';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { ENV, KNOWLEDGE_QUEUE, PRISMA, REDIS, WEBHOOK_QUEUE } from './tokens';
+import { AI_QUEUE, ENV, KNOWLEDGE_QUEUE, PRISMA, REDIS, WEBHOOK_QUEUE } from './tokens';
 
 const logger = new Logger('Infrastructure');
 const REDIS_STARTUP_TIMEOUT_MS = 5000;
@@ -80,8 +80,19 @@ function waitUntilReady(redis: Redis, timeoutMs: number): Promise<void> {
         return new Queue(QUEUE_NAMES.knowledge, { connection });
       },
     },
+    {
+      provide: AI_QUEUE,
+      inject: [ENV],
+      useFactory: (env: ApiEnv): Queue => {
+        const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+        connection.on('error', (error: Error) =>
+          logger.warn(`AI queue Redis error: ${error.message}`),
+        );
+        return new Queue(QUEUE_NAMES.ai, { connection });
+      },
+    },
   ],
-  exports: [ENV, PRISMA, REDIS, WEBHOOK_QUEUE, KNOWLEDGE_QUEUE],
+  exports: [ENV, PRISMA, REDIS, WEBHOOK_QUEUE, KNOWLEDGE_QUEUE, AI_QUEUE],
 })
 export class InfrastructureModule implements OnApplicationShutdown {
   constructor(
@@ -89,12 +100,14 @@ export class InfrastructureModule implements OnApplicationShutdown {
     @Inject(REDIS) private readonly redis: Redis,
     @Inject(WEBHOOK_QUEUE) private readonly webhookQueue: Queue,
     @Inject(KNOWLEDGE_QUEUE) private readonly knowledgeQueue: Queue,
+    @Inject(AI_QUEUE) private readonly aiQueue: Queue,
   ) {}
 
   async onApplicationShutdown(): Promise<void> {
     await Promise.allSettled([
       this.webhookQueue.close(),
       this.knowledgeQueue.close(),
+      this.aiQueue.close(),
       this.prisma.$disconnect(),
       this.redis.quit(),
     ]);

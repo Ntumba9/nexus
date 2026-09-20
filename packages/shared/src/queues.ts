@@ -17,6 +17,8 @@ export const QUEUE_NAMES = {
   automation: 'automation',
   /** One job per knowledge document whose chunks need embedding. */
   knowledge: 'knowledge',
+  /** One job per AI investigation. */
+  ai: 'ai-investigation',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -25,6 +27,7 @@ export const HEALTH_CHECK_JOBS = { run: 'run' } as const;
 export const WEBHOOK_JOBS = { process: 'process' } as const;
 export const AUTOMATION_JOBS = { execute: 'execute' } as const;
 export const KNOWLEDGE_JOBS = { embed: 'embed' } as const;
+export const AI_JOBS = { investigate: 'investigate' } as const;
 export const MAINTENANCE_JOBS = {
   cleanupResults: 'cleanup-results',
   cleanupWebhooks: 'cleanup-webhooks',

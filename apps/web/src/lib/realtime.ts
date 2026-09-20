@@ -44,6 +44,11 @@ export function queryKeysForTopic(orgId: string, topic: RealtimeTopic): (readonl
         ['knowledge-search', orgId],
         ['incident-runbooks', orgId],
       ];
+    case 'ai':
+      return [
+        ['ai', orgId],
+        ['incident-events', orgId],
+      ];
     case 'organization':
       return [];
   }

@@ -49,6 +49,7 @@ export const INCIDENT_EVENT_TYPES = [
   'DEPLOYMENT_LINKED',
   /** Recorded when an automation rule ran because of this incident. */
   'AUTOMATION_EXECUTED',
+  'AI_INVESTIGATED',
 ] as const;
 export type IncidentEventType = (typeof INCIDENT_EVENT_TYPES)[number];
 

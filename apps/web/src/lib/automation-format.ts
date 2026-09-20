@@ -114,6 +114,7 @@ const AUDIT_VERB: Record<AuditAction, string> = {
   'knowledge.document.created': 'created the document',
   'knowledge.document.updated': 'edited the document',
   'knowledge.document.deleted': 'deleted the document',
+  'ai.investigation.requested': 'started an investigation of',
 };
 
 /** "created the automation rule “Critical incident alert”". */

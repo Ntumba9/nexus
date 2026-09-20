@@ -42,6 +42,7 @@ describe('realtime contract', () => {
     expect(topicsForMutation('checks/abc/run')).toEqual(['monitoring', 'services']);
     expect(topicsForMutation('automation/rules')).toEqual(['automation']);
     expect(topicsForMutation('knowledge/abc')).toEqual(['knowledge']);
+    expect(topicsForMutation('incidents/abc/investigations')).toEqual(['incidents', 'ai']);
     expect(topicsForMutation('')).toEqual(['organization']);
     expect(topicsForMutation('unknown/thing')).toEqual([]);
   });

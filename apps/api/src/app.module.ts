@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AiModule } from './ai/ai.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { AutomationModule } from './automation/automation.module';
@@ -23,6 +24,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     GitHubModule,
     AutomationModule,
     KnowledgeModule,
+    AiModule,
     AuditModule,
     RealtimeModule,
     HealthModule,

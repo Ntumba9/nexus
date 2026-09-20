@@ -20,6 +20,7 @@ export const REALTIME_TOPICS = [
   'members',
   'organization',
   'knowledge',
+  'ai',
 ] as const;
 export const realtimeTopicSchema = z.enum(REALTIME_TOPICS);
 export type RealtimeTopic = z.infer<typeof realtimeTopicSchema>;
@@ -40,6 +41,7 @@ export const TOPIC_PERMISSION: Readonly<Record<RealtimeTopic, Permission>> = {
   members: 'users.read',
   organization: 'organization.read',
   knowledge: 'knowledge.read',
+  ai: 'incidents.read',
 };
 
 export const realtimeMessageSchema = z.object({
@@ -136,6 +138,7 @@ export function topicsForMutation(pathBelowOrg: string): RealtimeTopic[] {
   // Nested resources change a second thing too.
   if (first === 'services' && third === 'checks') topics.add('monitoring');
   if (first === 'incidents' && third === 'deployments') topics.add('deployments');
+  if (first === 'incidents' && third === 'investigations') topics.add('ai');
   if (first === 'checks') topics.add('services');
   return [...topics];
 }

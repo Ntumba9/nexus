@@ -80,6 +80,10 @@ export function describeEvent(event: Pick<IncidentEventDto, 'type' | 'data'>): s
         ? `confirmed ${what} as the cause`
         : `linked ${what} as a suspected cause`;
     }
+    case 'AI_INVESTIGATED':
+      return typeof data.provider === 'string'
+        ? `ran an investigation (${data.provider})`
+        : 'ran an investigation';
     case 'AUTOMATION_EXECUTED': {
       const rule =
         typeof data.ruleName === 'string'
