@@ -2,7 +2,7 @@
   "name": "nexus",
   "version": "0.1.0",
   "private": true,
-  "description": "NEXUS \u2014 developer operations and incident intelligence platform",
+  "description": "NEXUS — developer operations and incident intelligence platform",
   "license": "MIT",
   "packageManager": "pnpm@10.30.0",
   "engines": {
@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm --filter \"./packages/*\" build && pnpm -r --if-present test",
+    "test:coverage": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present exec vitest run --coverage --coverage.reporter=text-summary",
     "test:integration": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present test:integration",
     "db:generate": "pnpm --filter @nexus/database generate",
     "db:migrate:dev": "pnpm --filter @nexus/database migrate:dev",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@next/eslint-plugin-next": "16.3.5",
+    "@vitest/coverage-v8": "3.2.7",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react-hooks": "7.1.1",
