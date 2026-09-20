@@ -98,11 +98,11 @@ Detailed in [ai.md](ai.md) and ADR-006. Summary: worker assembles a bounded, ten
 
 Server-Sent Events (ADR-004). Updates are one-directional (server → browser), SSE works over plain HTTP with cookie auth, auto-reconnects, and needs no extra infrastructure beyond Redis pub/sub for fan-out across API instances. Channel per organisation; the API filters by permission before writing to a stream. Messages are signals (`{ topic, userId? }`), never data: the browser refetches through REST, so authorization lives in one place. The API publishes after successful mutations, workers publish after their own changes (the automation dispatcher announces every outbox event), and each open stream re-checks its member and session on every heartbeat. Details and limits: [ADR-014](decisions/ADR-014-realtime-implementation.md).
 
-## 5. Observability _(planned Phase 10)_
+## 5. Observability _(implemented in Phase 10, ADR-017; OpenTelemetry deliberately not done)_
 
 - Structured JSON logs (pino) with `requestId`, `organizationId`, `userId`, `jobId`.
 - `X-Request-Id` accepted/generated, propagated into job payloads so a worker log line links back to the originating request.
-- OpenTelemetry SDK for HTTP, Prisma and BullMQ spans; OTLP exporter configured by env, off by default.
+- Prometheus metrics (`/metrics` on the API and the worker health port, off unless `METRICS_TOKEN` is set): request counts and latency by route template, jobs by queue and outcome, queue depth, process gauges. OpenTelemetry tracing was considered and left out (ADR-017).
 - `/health/live` and `/health/ready` (DB + Redis) endpoints.
 - Secrets/PII redaction list in logger config.
 

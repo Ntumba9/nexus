@@ -647,6 +647,22 @@ export const AUDIT_ACTIONS = [
   'knowledge.document.updated',
   'knowledge.document.deleted',
   'ai.investigation.requested',
+  'auth.signed_in',
+  'auth.signed_out',
+  'auth.signed_out_everywhere',
+  'auth.password_changed',
+  'auth.password_reset_requested',
+  'auth.password_reset',
+  'member.added',
+  'member.role_changed',
+  'member.removed',
+  'organization.updated',
+  'project.created',
+  'project.updated',
+  'project.archived',
+  'service.created',
+  'service.updated',
+  'service.archived',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

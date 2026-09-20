@@ -61,6 +61,31 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/** Changing your own password: proves you know the current one, and must actually change it. */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Enter your current password').max(PASSWORD_MAX_LENGTH),
+    newPassword: passwordSchema,
+  })
+  .refine((value) => value.newPassword !== value.currentPassword, {
+    path: ['newPassword'],
+    message: 'Choose a password you have not used just now',
+  });
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/** A reset token is 32 random bytes, base64url without padding. */
+export const RESET_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+export const RESET_TOKEN_TTL_MINUTES = 60;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().regex(RESET_TOKEN_PATTERN, 'This reset link is not valid'),
+  password: passwordSchema,
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
 export const createOrganizationSchema = z.object({ name: nameSchema });
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 

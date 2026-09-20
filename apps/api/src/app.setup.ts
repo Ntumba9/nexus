@@ -6,6 +6,10 @@ import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { ApiError } from './common/api-error';
 import type { AppRequest } from './common/request-context';
+import { requestStore } from './common/request-store';
+import { MetricsService } from './observability/metrics.service';
+import { globalRateLimit } from './rate-limit/global-limit';
+import { REDIS } from './infrastructure/tokens';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -19,7 +23,8 @@ const SIGNED_WEBHOOK_PREFIX = '/api/v1/webhooks/';
 function requestId(request: AppRequest, response: Response, next: NextFunction): void {
   request.id = randomUUID();
   response.setHeader('X-Request-Id', request.id);
-  next();
+  // Everything this request does, however deep, can find its id (logs, audit entries).
+  requestStore.run({ requestId: request.id }, next);
 }
 
 /**
@@ -52,15 +57,27 @@ export function configureApp(app: NestExpressApplication, env: ApiEnv): void {
   app.set('trust proxy', env.TRUST_PROXY_HOPS);
   app.disable('x-powered-by');
 
-  const secureHeaders = helmet();
+  // This API only ever answers with JSON or text, never a page: nothing may be loaded, framed or
+  // embedded from its responses. (Swagger UI, a development tool, is exempted below.)
+  const secureHeaders = helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"] },
+    },
+    strictTransportSecurity: { maxAge: 63_072_000, includeSubDomains: true },
+    referrerPolicy: { policy: 'no-referrer' },
+  });
   app.use(requestId);
+  // One log line and one metrics sample per request, once it has finished.
+  app.use(app.get(MetricsService).middleware());
   // Swagger UI needs inline scripts that helmet's default CSP blocks; it is a dev-only page.
   app.use((request: AppRequest, response: Response, next: NextFunction) =>
     request.path.startsWith('/api/docs') ? next() : secureHeaders(request, response, next),
   );
+  app.use(globalRateLimit(app.get(REDIS), env.API_RATE_LIMIT_PER_MINUTE));
   app.use(originCheck(env.WEB_ORIGIN));
   app.enableCors({ origin: env.WEB_ORIGIN, credentials: true });
 
-  app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready'] });
+  app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready', 'metrics'] });
   app.useGlobalFilters(new AllExceptionsFilter());
 }

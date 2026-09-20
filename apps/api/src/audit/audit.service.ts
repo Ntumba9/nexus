@@ -3,6 +3,7 @@ import { writeAuditLog } from '@nexus/database';
 import type { Prisma, PrismaClient } from '@nexus/database';
 import type { AuditAction, AuditLogDto, AuditLogPageDto, ListAuditLogsQuery } from '@nexus/shared';
 import type { TenantContext } from '../common/request-context';
+import { currentRequestId } from '../common/request-store';
 import { PRISMA } from '../infrastructure/tokens';
 
 export interface AuditRecord {
@@ -30,7 +31,7 @@ export class AuditService {
     await writeAuditLog(tx, {
       organizationId: tenant.organizationId,
       actor: { type: 'USER', id: tenant.userId, label: user?.name ?? 'Unknown user' },
-      requestId: requestId ?? null,
+      requestId: requestId ?? currentRequestId() ?? null,
       ...entry,
     });
   }

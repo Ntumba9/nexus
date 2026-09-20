@@ -7,6 +7,7 @@ export * from './dashboard';
 export * from './github';
 export * from './health';
 export * from './incidents';
+export * from './metrics';
 export * from './knowledge';
 export * from './knowledge-text';
 export * from './monitoring';

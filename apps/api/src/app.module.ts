@@ -7,6 +7,7 @@ import { GitHubModule } from './github/github.module';
 import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
+import { ObservabilityModule } from './observability/observability.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { OrganizationsModule } from './organizations/organizations.module';
@@ -27,6 +28,7 @@ import { RealtimeModule } from './realtime/realtime.module';
     AiModule,
     AuditModule,
     RealtimeModule,
+    ObservabilityModule,
     HealthModule,
   ],
 })

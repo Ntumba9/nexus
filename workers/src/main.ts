@@ -18,6 +18,7 @@ import { startAutomationDispatcher } from './automation/dispatcher';
 import { createLogEmailSender } from './automation/email';
 import { createSafePoster } from './automation/safe-post';
 import { investigationWorker } from './ai/investigate';
+import { emailWorker } from './email/password-reset';
 import { knowledgeWorker, startEmbeddingSweep } from './knowledge/embed';
 import { createSmtpEmailSender, createSmtpTransporter } from './automation/smtp';
 import {
@@ -27,6 +28,7 @@ import {
   webhookWorker,
 } from './processors/monitoring';
 import { systemWorker } from './processors/system';
+import { registry } from './metrics';
 import { createBullConnection, createPublisherConnection } from './redis';
 
 const HOUR_MS = 3_600_000;
@@ -111,6 +113,21 @@ async function main(): Promise<void> {
       logger,
     ),
     createWorker(knowledgeWorker(knowledgeDeps, env.WORKER_CONCURRENCY), connection, logger),
+    createWorker(
+      emailWorker(
+        {
+          prisma,
+          email,
+          logger,
+          webOrigin: env.WEB_ORIGIN,
+          // Only ever in development, and only when nothing is really sent.
+          revealLinkInLogs: env.EMAIL_TRANSPORT === 'log' && env.NODE_ENV !== 'production',
+        },
+        2,
+      ),
+      connection,
+      logger,
+    ),
     // Only when enabled: with AI_PROVIDER=none nothing consumes (or accepts) investigation jobs.
     ...(analysis
       ? [
@@ -187,10 +204,26 @@ async function main(): Promise<void> {
   scheduleCleanup();
   const cleanupTimer = setInterval(scheduleCleanup, HOUR_MS);
 
+  // How many jobs are waiting, per queue: the first thing to look at when something is slow.
+  for (const [name, queue] of [
+    [QUEUE_NAMES.healthCheck, healthCheckQueue],
+    [QUEUE_NAMES.maintenance, maintenanceQueue],
+    [QUEUE_NAMES.automation, automationQueue],
+  ] as const) {
+    registry.gauge({
+      name: `nexus_queue_waiting_jobs_${name.replace(/-/g, '_')}`,
+      help: `Jobs waiting in the ${name} queue.`,
+      read: async () => (await queue.getJobCounts('waiting')).waiting ?? 0,
+    });
+  }
+
   const healthServer = startHealthServer(
     {
       host: env.WORKER_HEALTH_HOST,
       port: env.WORKER_HEALTH_PORT,
+      ...(env.METRICS_TOKEN
+        ? { metrics: { token: env.METRICS_TOKEN, render: () => registry.render() } }
+        : {}),
       probes: [
         { name: 'redis', check: () => connection.ping() },
         { name: 'postgres', check: () => pingDatabase(prisma) },

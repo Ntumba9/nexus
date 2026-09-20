@@ -8,3 +8,5 @@ export const WEBHOOK_QUEUE = Symbol('WEBHOOK_QUEUE');
 export const KNOWLEDGE_QUEUE = Symbol('KNOWLEDGE_QUEUE');
 /** BullMQ producer for AI investigation jobs. */
 export const AI_QUEUE = Symbol('AI_QUEUE');
+/** BullMQ producer for transactional email (password reset). */
+export const EMAIL_QUEUE = Symbol('EMAIL_QUEUE');

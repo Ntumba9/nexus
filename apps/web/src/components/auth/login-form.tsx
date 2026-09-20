@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema } from '@nexus/shared';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
@@ -16,6 +16,7 @@ type LoginValues = z.input<typeof loginSchema>;
 
 export function LoginForm() {
   const router = useRouter();
+  const justReset = useSearchParams().get('reset') === '1';
   const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
@@ -43,6 +44,9 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+      {justReset && !formError && (
+        <Alert tone="success">Your password was changed. Log in with the new one.</Alert>
+      )}
       {formError && <Alert>{formError}</Alert>}
       <Field label="Email" htmlFor="email" error={errors.email?.message}>
         <Input
@@ -67,6 +71,11 @@ export function LoginForm() {
       <Button type="submit" loading={isSubmitting} className="w-full">
         Log in
       </Button>
+      <p className="text-center text-sm">
+        <Link href="/forgot-password" className="text-muted hover:text-foreground hover:underline">
+          Forgot your password?
+        </Link>
+      </p>
       <p className="text-center text-sm text-muted">
         New to NEXUS?{' '}
         <Link href="/register" className="text-accent hover:underline">

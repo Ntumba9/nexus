@@ -2,11 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 9 complete (AI investigation).** Accounts, organizations, RBAC, projects, services,
+> **Status: Phase 10 complete (security hardening and observability).** Accounts, organizations, RBAC, projects, services,
 > incident management, the dashboard, HTTP monitoring, GitHub deployments linked to incidents, and a
 > rule-based automation and notification system with an audit log, and live updates over Server-Sent Events
 > are built and tested in CI (unit, API and worker integration against real PostgreSQL and Redis, and
-> Playwright end-to-end). Security hardening, observability and production packaging are **not done yet**; see the [roadmap](#roadmap). Sections describing those are the target design.
+> Playwright end-to-end). Comprehensive testing and production packaging are **not done yet**; see the [roadmap](#roadmap). Sections describing those are the target design.
 
 ## What it is
 
@@ -39,6 +39,7 @@ useful when the AI provider is unavailable.
 - Audit log: append-only in the database, written with the change it describes and redacted first; covers automation, outbound webhooks and integrations
 - Knowledge base: Markdown runbooks and how-tos per organization, split into heading-aware chunks and searched two ways at once, by keyword and by meaning, fused into one ranking that says where in a document it matched and how. Works with no account, key or download (a built-in local embedder); an optional OpenAI-compatible endpoint (a local Ollama or a free tier) gives real semantic search. Relevant runbooks are suggested on each incident. Rendered safely (no HTML), tenant-isolated in the database and in every query, and it keeps working on keyword search if embeddings are unavailable
 - Investigation: one click on an incident reads its timeline, recent deployments, health checks, earlier incidents and matching runbooks, and returns a summary, possible causes, evidence and suggestions, each citing the sources it used (open a citation to read the exact text). It works out of the box on a built-in rule engine that is labelled as not being an AI model, or on any OpenAI-compatible model (a local Ollama, or a free tier such as Groq, Gemini or OpenRouter). Whatever answers, its output is treated as untrusted: it must match a strict schema, every citation is checked against the sources really provided (invented ones are removed and unsupported claims are shown as inference), secrets are redacted before anything is stored or sent, and nothing it suggests is ever executed
+- Security hardening: a strict per-request Content-Security-Policy (nonce, no inline script) and HSTS on the web app, a locked-down API, sign out everywhere, change password and email-based password reset (single-use hashed tokens, identical answer for any address), audit entries for members, roles, settings, projects, services and sign-ins, structured JSON logs whose request id follows a request into the workers, Prometheus metrics behind a token, a CI dependency audit, and a test that reads the live database schema to catch any change that weakens tenant isolation. Row Level Security, MFA and OpenTelemetry were deliberately left out, with reasons, in [ADR-017](docs/decisions/ADR-017-security-hardening-and-observability.md)
 - Real-time updates: one Server-Sent Events stream per browser tab, fed through Redis pub/sub so several API instances and the workers all reach it. Messages are signals with no record data (the browser refetches through the normal, authorized API), only reach members allowed to read that topic, and end as soon as the member is removed or signs out. Polling stays as a slow fallback, and a Live/Polling indicator shows which mode you are in
 - Overview dashboard built from real data: active incidents by severity, service health (real once checks exist; "not monitored" otherwise), 14-day trend, recent incidents and activity
 - Authenticated web app shell (dark UI): login, register, onboarding, dashboard, projects, services, incidents, settings and members, with loading, error and empty states
@@ -72,7 +73,7 @@ Details: [docs/architecture.md](docs/architecture.md). Decisions: [docs/decision
 
 TypeScript (strict) · Next.js · NestJS · PostgreSQL + pgvector · Prisma · Redis · BullMQ · Zod ·
 Tailwind CSS · TanStack Query · React Hook Form · Argon2id · Vitest · Supertest · Playwright ·
-ESLint · Prettier · Docker Compose · GitHub Actions. Later phases add OpenTelemetry and the
+ESLint · Prettier · Docker Compose · GitHub Actions. Later phases add the
 the AI providers speak plain HTTP, so there is no vendor SDK — each dependency is added when a feature first needs it.
 
 ## Local development
@@ -177,6 +178,8 @@ process with a message naming the variable (never its value). See [.env.example]
 | `AUTOMATION_DISPATCH_INTERVAL_MS`, `AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR`  | workers      | how often events are matched to rules (default `1000` ms) and the per-rule hourly cap (default `60`)                                                                                                                                                                                                                                                                                                                                |
 | `EMBEDDING_PROVIDER`, `EMBEDDING_API_URL`, `EMBEDDING_MODEL`, `EMBEDDING_API_KEY` | api, workers | `local` (default) needs nothing. `openai` calls any OpenAI-compatible `/embeddings` endpoint (for example Ollama at `http://localhost:11434/v1` with `all-minilm`) and needs a **384-dimension** model. The api and workers must match. `EMBEDDING_API_KEY` is a secret                                                                                                                                                             |
 | `AI_PROVIDER`, `AI_API_URL`, `AI_MODEL`, `AI_VENDOR`, `AI_API_KEY`                | api, workers | `rules` (default) is the built-in rule-based analysis: free, offline, no key. `openai` calls any OpenAI-compatible `/chat/completions` endpoint (Ollama at `http://localhost:11434/v1`; Groq `https://api.groq.com/openai/v1`; Gemini `https://generativelanguage.googleapis.com/v1beta/openai`; OpenRouter `https://openrouter.ai/api/v1`). `none` turns the feature off. The api and workers must match. `AI_API_KEY` is a secret |
+| `METRICS_TOKEN`                                                                   | api, workers | 16 to 200 characters (`openssl rand -hex 24`). Enables `GET /metrics` (Prometheus text) behind `Authorization: Bearer <token>`; unset means the endpoint does not exist                                                                                                                                                                                                                                                             |
+| `API_RATE_LIMIT_PER_MINUTE`                                                       | api          | requests per client IP per minute across the whole API (default `1200`); 429 with `Retry-After` above it                                                                                                                                                                                                                                                                                                                            |
 | `REALTIME_HEARTBEAT_MS`                                                           | api          | keep-alive and access re-check interval of each open real-time stream (default `15000`). Keep it below your reverse proxy's idle timeout (nginx: 60 s)                                                                                                                                                                                                                                                                              |
 | `AUTOMATION_RETENTION_DAYS`, `NOTIFICATION_RETENTION_DAYS`                        | workers      | dispatched events with their runs, and notifications, are deleted after this many days (default `90`)                                                                                                                                                                                                                                                                                                                               |
 | `WEB_ORIGIN`                                                                      | workers too  | emails link back to it (default `http://localhost:3000`)                                                                                                                                                                                                                                                                                                                                                                            |
@@ -254,7 +257,7 @@ local development fallback; no paid embedding provider is configured.
 | 7     | Real-time                                     | Done    |
 | 8     | Knowledge base and RAG                        | Done    |
 | 9     | AI investigation                              | Done    |
-| 10    | Security hardening and observability          | Planned |
+| 10    | Security hardening and observability          | Done    |
 | 11    | Comprehensive testing                         | Planned |
 | 12    | Production polish and demo                    | Planned |
 

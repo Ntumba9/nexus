@@ -11,7 +11,8 @@ describe('loadEnv', () => {
     const env = loadEnv(apiEnvSchema, { ...valid, API_PORT: '4000' });
     expect(env.API_PORT).toBe(4000);
     expect(env.NODE_ENV).toBe('development');
-    expect(env.SWAGGER_ENABLED).toBe(true);
+    expect(env.SWAGGER_ENABLED).toBeUndefined(); // decided by NODE_ENV at startup: off in production
+    expect(env.API_RATE_LIMIT_PER_MINUTE).toBe(1200);
   });
 
   it('rejects missing required variables', () => {

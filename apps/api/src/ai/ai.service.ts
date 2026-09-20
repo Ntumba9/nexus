@@ -176,6 +176,7 @@ export class AiService {
     const payload: InvestigationJobPayload = {
       organizationId: tenant.organizationId,
       investigationId: id,
+      ...(requestId ? { requestId } : {}),
     };
     try {
       await this.queue.add(AI_JOBS.investigate, payload, {

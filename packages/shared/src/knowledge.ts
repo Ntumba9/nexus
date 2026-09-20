@@ -112,5 +112,7 @@ export interface KnowledgeSearchResultDto {
 export const embedDocumentPayloadSchema = z.object({
   organizationId: z.uuid(),
   documentId: z.uuid(),
+  /** The API request that caused this job, for correlating logs. */
+  requestId: z.string().max(64).optional(),
 });
 export type EmbedDocumentPayload = z.infer<typeof embedDocumentPayloadSchema>;

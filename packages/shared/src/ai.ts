@@ -320,5 +320,6 @@ export interface InvestigationDto {
 export const investigationJobPayloadSchema = z.object({
   organizationId: z.uuid(),
   investigationId: z.uuid(),
+  requestId: z.string().max(64).optional(),
 });
 export type InvestigationJobPayload = z.infer<typeof investigationJobPayloadSchema>;

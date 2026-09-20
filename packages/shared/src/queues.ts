@@ -19,6 +19,8 @@ export const QUEUE_NAMES = {
   knowledge: 'knowledge',
   /** One job per AI investigation. */
   ai: 'ai-investigation',
+  /** Transactional email (password reset). */
+  email: 'email',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
@@ -28,6 +30,19 @@ export const WEBHOOK_JOBS = { process: 'process' } as const;
 export const AUTOMATION_JOBS = { execute: 'execute' } as const;
 export const KNOWLEDGE_JOBS = { embed: 'embed' } as const;
 export const AI_JOBS = { investigate: 'investigate' } as const;
+export const EMAIL_JOBS = { passwordReset: 'password-reset' } as const;
+
+/**
+ * Asks the worker to email a password-reset link. The address is never in the payload: the worker
+ * looks the person up, so a job can only ever reach the account it names. The token is (see ADR-017)
+ * the one secret that crosses Redis, so jobs are removed as soon as they finish.
+ */
+export const passwordResetJobSchema = z.object({
+  userId: z.uuid(),
+  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  requestId: z.string().max(64).optional(),
+});
+export type PasswordResetJob = z.infer<typeof passwordResetJobSchema>;
 export const MAINTENANCE_JOBS = {
   cleanupResults: 'cleanup-results',
   cleanupWebhooks: 'cleanup-webhooks',

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@nexus/database';
 import type { AddMemberInput, MemberDto, Role } from '@nexus/shared';
+import { AuditService } from '../audit/audit.service';
 import { ApiError } from '../common/api-error';
 import type { TenantContext } from '../common/request-context';
 import { PRISMA } from '../infrastructure/tokens';
@@ -36,7 +37,10 @@ function toDto(row: MemberRow): MemberDto {
  */
 @Injectable()
 export class MembersService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(AuditService) private readonly audit: AuditService,
+  ) {}
 
   async list(tenant: TenantContext): Promise<MemberDto[]> {
     const rows = await this.prisma.organizationMember.findMany({
@@ -58,9 +62,18 @@ export class MembersService {
     if (!user || user.disabledAt) throw ApiError.notFound('No account exists for that email');
 
     try {
-      const row = await this.prisma.organizationMember.create({
-        data: { organizationId: tenant.organizationId, userId: user.id, role: input.role },
-        select: memberSelect,
+      const row = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.organizationMember.create({
+          data: { organizationId: tenant.organizationId, userId: user.id, role: input.role },
+          select: memberSelect,
+        });
+        await this.audit.record(tx, tenant, undefined, {
+          action: 'member.added',
+          resourceType: 'member',
+          resourceId: created.id,
+          metadata: { name: created.user.name, role: input.role },
+        });
+        return created;
       });
       return toDto(row);
     } catch (error) {
@@ -82,6 +95,12 @@ export class MembersService {
         where: { id: member.id, organizationId: tenant.organizationId },
         data: { role },
       });
+      await this.audit.record(tx, tenant, undefined, {
+        action: 'member.role_changed',
+        resourceType: 'member',
+        resourceId: member.id,
+        metadata: { name: member.user.name, from: member.role, to: role },
+      });
       return toDto({ ...member, role });
     });
   }
@@ -94,6 +113,12 @@ export class MembersService {
 
       await tx.organizationMember.deleteMany({
         where: { id: member.id, organizationId: tenant.organizationId },
+      });
+      await this.audit.record(tx, tenant, undefined, {
+        action: 'member.removed',
+        resourceType: 'member',
+        resourceId: member.id,
+        metadata: { name: member.user.name, role: member.role },
       });
     });
   }

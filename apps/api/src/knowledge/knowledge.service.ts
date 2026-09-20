@@ -24,6 +24,7 @@ import type { Queue } from 'bullmq';
 import { AuditService } from '../audit/audit.service';
 import { ApiError } from '../common/api-error';
 import type { TenantContext } from '../common/request-context';
+import { currentRequestId } from '../common/request-store';
 import { slugify } from '../common/slug';
 import { KNOWLEDGE_QUEUE, PRISMA } from '../infrastructure/tokens';
 import type { RateLimiter } from '../rate-limit/rate-limiter';
@@ -310,7 +311,12 @@ export class KnowledgeService {
 
   /** Ask a worker to embed the document's new chunks. The worker's sweep is the safety net. */
   private async requestEmbedding(organizationId: string, documentId: string): Promise<void> {
-    const payload: EmbedDocumentPayload = { organizationId, documentId };
+    const requestId = currentRequestId();
+    const payload: EmbedDocumentPayload = {
+      organizationId,
+      documentId,
+      ...(requestId ? { requestId } : {}),
+    };
     try {
       await this.queue.add(KNOWLEDGE_JOBS.embed, payload, {
         // Unique per save: a finished job for an earlier version must not swallow this one.

@@ -453,6 +453,7 @@ describe.skipIf(!HAS_INFRA)('automation API (integration)', () => {
       const entries = await auditFor(secretOrg);
       expect(entries.map((e) => e.action)).toEqual([
         'outbound_webhook.created',
+        'project.created', // creating the project for the integration is audited too (Phase 10)
         'integration.github.created',
         'integration.github.disabled',
         'outbound_webhook.disabled',
@@ -465,7 +466,7 @@ describe.skipIf(!HAS_INFRA)('automation API (integration)', () => {
         name: 'Pager',
         url: 'https://hooks.example.com/path',
       });
-      expect(entries[1]!.metadata).toEqual({ repository: 'acme/audit-me' });
+      expect(entries[2]!.metadata).toEqual({ repository: 'acme/audit-me' });
     });
 
     it.each(ROLES)('%s: reading the audit log matches the role', async (role) => {

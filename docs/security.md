@@ -74,8 +74,8 @@ Residual risks: a public hostname can still resolve to a public address that is 
 
 | Threat                            | Vector                                                       | Control                                                                                                                                                                                                                                                                          |
 | --------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Credential stuffing / brute force | Login endpoint                                               | Rate limits (implemented), Argon2id (implemented), audit of failures (Phase 10)                                                                                                                                                                                                  |
-| Session theft                     | XSS, network                                                 | HttpOnly/Secure cookies, hashed tokens, revocation (implemented); CSP (Phase 10)                                                                                                                                                                                                 |
+| Credential stuffing / brute force | Login endpoint                                               | Rate limits (implemented), Argon2id (implemented), failures logged and rate limited (Phase 10)                                                                                                                                                                                   |
+| Session theft                     | XSS, network                                                 | HttpOnly/Secure cookies, hashed tokens, revocation (implemented); strict CSP, sign out everywhere, password change (Phase 10)                                                                                                                                                    |
 | CSRF                              | Cookie auth                                                  | SameSite=Lax + Origin check on state-changing requests (implemented)                                                                                                                                                                                                             |
 | Broken authorization (IDOR)       | Guess IDs                                                    | UUIDs, tenant-scoped queries, membership guard, cross-tenant tests (implemented)                                                                                                                                                                                                 |
 | Tenant data leakage               | Missing `where`                                              | Composite unique keys, scoped queries, tests (implemented); optional RLS and vector queries filtered by org (later)                                                                                                                                                              |
@@ -106,7 +106,7 @@ Configuration is via environment variables validated at startup (Zod). `.env` is
 
 ## Security headers
 
-API: Helmet defaults, `X-Powered-By` removed, CORS restricted to `WEB_ORIGIN`. Web: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`. HSTS and a strict CSP are Phase 10.
+API: strict Helmet policy (`default-src 'none'`), HSTS, `X-Powered-By` removed, CORS restricted to `WEB_ORIGIN`. Web: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`. HSTS and a strict CSP are Phase 10.
 
 ## Phase 2 security review
 
@@ -128,13 +128,14 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 
 - **Client IP behind a proxy.** The web proxy forwards `X-Forwarded-For`; the API trusts `TRUST_PROXY_HOPS` hops (0 by default, so all traffic appears to come from the proxy). With hops=1 and no real load balancer in front, a client can spoof `X-Forwarded-For` to rotate IPs; the per-account limit still holds. Production must sit behind a proxy that appends the real client address.
 - **Registration enumeration** (above) until email verification exists.
-- **No account lockout, password reset, MFA or "log out everywhere"** yet. `SessionService.revokeAllForUser` exists for the latter; no endpoint uses it.
+- **No MFA, no email verification and no account lockout.** Sign out everywhere, change password and email-based password reset exist (Phase 10, ADR-017); credential endpoints are rate limited per account and per IP instead of locking accounts (which would let anyone lock a victim out). MFA and verification were deliberately left out (ADR-017).
 - **Stale role within a request.** A role is read at the start of a request; a change made during that request is not seen until the next one. Ownership safety is unaffected because owner counts are re-read under a row lock.
-- **The audit log covers automation, outbound webhooks, GitHub integrations and incidents opened by automation** (Phase 6). Role changes, member removals and sign-in events are not yet recorded (Phase 10).
+- **The audit log** covers automation, outbound webhooks, integrations, members and roles, organization settings, projects and services, knowledge documents, investigations and account events (sign-in and out, password change and reset), all written with the change they describe (Phase 6, 8, 9, 10). **Failed sign-ins are not audited** (there is no organization to attribute them to, and recording them would let anyone fill a victim's append-only log); they are rate limited and logged. Incident changes are on the incident's own timeline.
 - **Real-time streams.** A stream re-checks membership, role and session every `REALTIME_HEARTBEAT_MS` (15 s by default), so a removed member or a signed-out session can keep an already-open stream for up to one heartbeat (it receives signals only, never data, and every refetch is authorized on its own). A session's idle expiry is not enforced on an open stream, only revocation and the absolute expiry. A user is limited to 10 open streams per API instance.
 - **Knowledge documents are untrusted input** (ADR-015). They are stored and returned verbatim, rendered by a parser that outputs React elements (no `innerHTML`, raw HTML shown as text, only `http(s)`/`mailto` links, long lines shown as plain text), and retrieved only through a function that requires an organization id. Phase 9 must still treat retrieved text as untrusted data inside the model prompt (ADR-006). Search embeds the query, so it is rate limited per user. A deleted document is gone permanently; only the audit entry remains.
 - **AI investigation** (ADR-016). Everything a model reads is untrusted: sources are delimited and their framing tags neutralised, the system prompt says never to follow them, secrets are redacted before storage or sending, and the answer is schema-validated and citation-checked against the sources really provided (invented citations removed, unsupported claims downgraded to inference), so the worst a successful injection can do is produce a flagged, misleading summary; there are no tools and nothing suggested is executed. With a hosted free-tier model, redacted incident text leaves the deployment for that vendor; the built-in rule engine (the default) and a local Ollama do not send anything anywhere. Redaction is pattern-based and cannot catch every secret format: treat the model as able to see anything an incident, its comments or a matching runbook contains. Each run is limited per person, audited (without the question text) and attributed on the timeline.
-- **Web CSP** is not set (Phase 10). Swagger UI is served without CSP (dev tool; disable with `SWAGGER_ENABLED=false`).
+- **Web CSP** is strict and per-request (nonce, no `unsafe-inline` or `unsafe-eval` in production; ADR-017). It requires every page to be rendered per request. Swagger UI is served without CSP (a development tool, off by default in production).
+- **Password reset links** cross Redis once, in the email job payload; jobs are removed when they finish, but anyone with access to Redis during that window could read one. Treat Redis as trusted infrastructure. With `EMAIL_TRANSPORT=log` outside production the worker prints the link so the flow works in development; never run production with `log`.
 - **Member add-by-email** lets holders of `users.manage` probe whether an email has an account. Replace with email invitations when email delivery exists.
 
 ## Implementation checklist
@@ -143,7 +144,7 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 - [x] RBAC permission map and default-deny guards (Phase 2)
 - [x] Tenant-scoped queries and isolation tests (Phase 2)
 - [x] Composite tenant foreign keys, append-only incident timeline, lifecycle CHECKs (Phase 3)
-- [ ] Row Level Security with a non-superuser application role (Phase 10; see ADR-010)
+- [ ] Row Level Security with a non-superuser application role: deliberately not done, with a rollout plan (ADR-017); guarded meanwhile by a live-catalog test of tenant isolation (Phase 10)
 - [x] Auth rate limiting, CSRF origin check, uniform errors, request ids (Phase 2)
 - [x] Validated env that never echoes values; Helmet headers; coarse health errors (Phase 1)
 - [x] Webhook signature verification, encrypted secrets, replay/duplicate handling and repository check (Phase 5)
@@ -154,4 +155,9 @@ Reviewed against the requested areas. "Tested" means an automated test asserts i
 - [x] Real-time stream: signals only (no data), per-topic permission filtering, per-user notification targeting, continuous membership/session re-check, per-user connection cap (Phase 7)
 - [x] Knowledge base: composite tenant foreign keys, org-scoped retrieval with no unscoped variant, iterative vector scans so tenant filtering is correct, safe rendering, audited writes (Phase 8)
 - [x] AI investigation: untrusted-data prompt framing, redaction, strict output schema, citation verification, one active run per incident (DB-enforced), per-person limit, no tools, audited (Phase 9)
-- [ ] Audit coverage of the rest of the product, web CSP, OpenTelemetry (Phase 10)
+- [x] Strict per-request web CSP, HSTS over HTTPS, locked-down API headers, global request ceiling, Swagger off in production (Phase 10)
+- [x] Audit coverage of members, roles, organization settings, projects, services and account events (Phase 10)
+- [x] Sign out everywhere, change password, password reset by email (single-use hashed token, enumeration-safe, rate limited) (Phase 10)
+- [x] Structured JSON logs with request-id propagation into workers, and Prometheus metrics behind a token (Phase 10)
+- [x] CI dependency audit (high and critical fail the build) and Dependabot (Phase 10)
+- [ ] MFA, email verification, OpenTelemetry: deliberately not done (ADR-017)

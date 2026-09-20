@@ -91,6 +91,20 @@ const aiEnv = {
     .transform((value) => value?.trim() || undefined),
 };
 
+/**
+ * Enables `GET /metrics` (Prometheus text) behind `Authorization: Bearer <token>`. Unset means the
+ * endpoint does not exist. At least 16 characters so it cannot be a guessable word.
+ */
+const metricsEnv = {
+  METRICS_TOKEN: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined)
+    .refine((value) => value === undefined || (value.length >= 16 && value.length <= 200), {
+      message: 'must be 16 to 200 characters (generate with: openssl rand -hex 24)',
+    }),
+};
+
 export const apiEnvSchema = z.object({
   ...baseEnv,
   DATABASE_URL: databaseUrl,
@@ -99,10 +113,16 @@ export const apiEnvSchema = z.object({
   API_PORT: port.default(3001),
   /** Browser origin allowed by CORS. */
   WEB_ORIGIN: httpUrl.default('http://localhost:3000'),
+  /** Interactive API docs. Unset means: on in development and test, OFF in production. */
   SWAGGER_ENABLED: z
     .enum(['true', 'false'])
-    .default('true')
-    .transform((value) => value === 'true'),
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
+  /**
+   * A generous ceiling on requests per client IP per minute across the whole API, so one client
+   * cannot hold the server busy. The credential endpoints have far stricter limits of their own.
+   */
+  API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(60).max(1_000_000).default(1200),
   /** Number of reverse-proxy hops to trust for client IP (X-Forwarded-For). 0 = trust none. */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
   /** Set the Secure flag on the session cookie. Defaults to true in production. */
@@ -123,6 +143,7 @@ export const apiEnvSchema = z.object({
   INTEGRATION_ENCRYPTION_KEY: encryptionKey,
   ...embeddingEnv,
   ...aiEnv,
+  ...metricsEnv,
   /**
    * How often an open real-time stream sends a keep-alive and re-checks that its member and session
    * are still valid. Keep it below any proxy's idle timeout (nginx defaults to 60 s).
@@ -143,6 +164,7 @@ export const workerEnvSchema = z.object({
   ...baseEnv,
   ...embeddingEnv,
   ...aiEnv,
+  ...metricsEnv,
   DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,

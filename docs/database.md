@@ -195,3 +195,12 @@ Migration `20260923100000_ai_investigation`. Design and reasoning: [ADR-016](dec
 - **`AiInvestigation`**: `status` (`QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`), `question`, `providerId` and `providerLabel` (kept even if configuration later changes), `context` (the exact sources the analysis saw, redacted and length-limited), `output` (the verified answer), the verification counts, `truncated`, a short `error`, `attempts` and timestamps. It references its incident through the composite tenant key `(organizationId, incidentId)`.
 - **A partial unique index allows one `QUEUED` or `RUNNING` investigation per incident** (Prisma ignores partial indexes, so `migrate dev` never drops it). CHECK constraints: a row has an `output` exactly when it `SUCCEEDED`; `finishedAt` is set exactly when it is over; a reason exists only on a failure and is at most 300 characters; the question is at most 500; counters are not negative.
 - `IncidentEventType` gains `AI_INVESTIGATED`.
+
+---
+
+## Phase 10 as implemented
+
+Migration `20260924100000_password_reset`. Design and reasoning: [ADR-017](decisions/ADR-017-security-hardening-and-observability.md).
+
+- **`PasswordReset`**: `userId` (cascades with the user), `tokenHash` (SHA-256, unique; the token itself is never stored), `expiresAt`, `usedAt`, the requesting `ip`. It belongs to a person, not an organization.
+- **Tenant isolation is checked against the live catalog** by a database integration test: every table either carries `organizationId` or is on a short reviewed list of exceptions (Organization, User, Session, PasswordReset, the migration table), every tenant table is anchored to an organization by a foreign key, and every foreign key between two tenant tables includes `organizationId`, so none can point across a tenant. Row Level Security remains deliberately off, with a documented rollout plan (ADR-017).

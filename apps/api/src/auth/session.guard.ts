@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { ApiError } from '../common/api-error';
 import { readCookie } from '../common/cookies';
 import type { AppRequest } from '../common/request-context';
+import { noteRequestScope } from '../common/request-store';
 import { IS_PUBLIC_KEY } from '../rbac/decorators';
 import { SESSION_COOKIE } from './session-cookie';
 import { SessionService } from './session.service';
@@ -30,6 +31,7 @@ export class SessionGuard implements CanActivate {
     if (!auth) throw ApiError.unauthenticated();
 
     request.auth = auth;
+    noteRequestScope({ userId: auth.user.id });
     return true;
   }
 }

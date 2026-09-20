@@ -30,6 +30,21 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fails on any known high or critical advisory in what actually ships (production dependencies).
+      # A transitive one is fixed with a `pnpm.overrides` entry in package.json, with a note saying why.
+      - run: pnpm audit --prod --audit-level high
+
   integration:
     name: Integration tests (PostgreSQL + Redis)
     runs-on: ubuntu-latest

@@ -5,6 +5,7 @@ import { roleHasPermission, type Permission } from '@nexus/shared';
 import { ApiError } from '../common/api-error';
 import type { AppRequest } from '../common/request-context';
 import { uuidSchema } from '../common/zod.pipe';
+import { noteRequestScope } from '../common/request-store';
 import { PRISMA } from '../infrastructure/tokens';
 import { AUTHENTICATED_ONLY_KEY, IS_PUBLIC_KEY, PERMISSION_KEY } from './decorators';
 
@@ -71,6 +72,7 @@ export class OrgAccessGuard implements CanActivate {
     }
     if (!roleHasPermission(membership.role, permission)) throw ApiError.forbidden();
 
+    noteRequestScope({ organizationId: parsed.data });
     request.tenant = {
       organizationId: parsed.data,
       userId: auth.user.id,

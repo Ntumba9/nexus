@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { roleHasPermission } from '@nexus/shared';
 import { GeneralSettingsForm } from '@/components/settings/general-form';
 import { MembersPanel } from '@/components/settings/members-panel';
+import { SecurityPanel } from '@/components/settings/security-panel';
 import { Card } from '@/components/ui/feedback';
 import { getMe, getOrganization } from '@/lib/server-api';
 
@@ -35,6 +36,13 @@ export default async function SettingsPage({ params }: { params: Promise<{ orgId
           myUserId={me.user.id}
           canManage={canManageMembers}
         />
+      </Card>
+
+      <Card
+        title="Your account security"
+        description="These apply to your own account, in every organization you belong to."
+      >
+        <SecurityPanel />
       </Card>
     </div>
   );

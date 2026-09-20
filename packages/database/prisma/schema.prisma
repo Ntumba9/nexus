@@ -58,6 +58,7 @@ model User {
   documentsCreated  KnowledgeDocument[]  @relation("DocumentCreatedBy")
   documentsUpdated  KnowledgeDocument[]  @relation("DocumentUpdatedBy")
   investigations    AiInvestigation[]    @relation("InvestigationRequestedBy")
+  passwordResets    PasswordReset[]
 }
 
 model Organization {
@@ -790,4 +791,25 @@ model AiInvestigation {
 
   @@unique([organizationId, id])
   @@index([organizationId, incidentId, createdAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 10: password reset (ADR-017).
+//
+// Only a SHA-256 of the token is stored, like session tokens, so a database leak yields no usable
+// reset. A token is single-use (usedAt) and expires after an hour.
+// ---------------------------------------------------------------------------------------------
+
+model PasswordReset {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(6)
+  usedAt    DateTime? @db.Timestamptz(6)
+  ip        String?
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
