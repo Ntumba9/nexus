@@ -18,9 +18,7 @@ export default async function HomePage() {
         <h1 className="text-3xl font-semibold tracking-tight">
           Developer operations &amp; incident intelligence
         </h1>
-        <p className="text-muted">
-          Foundation build. Authentication, incidents and monitoring arrive in later phases.
-        </p>
+        <p className="text-muted">Live status of the services this app depends on.</p>
       </header>
 
       <section

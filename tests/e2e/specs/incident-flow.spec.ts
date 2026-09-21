@@ -103,11 +103,8 @@ test('project → service → incident → acknowledge → assign → comment �
   await nav(page, 'Overview').click();
   await expect(page.getByLabel('0 active incidents')).toHaveText('0');
   await expect(page.getByRole('link', { name: /API latency spike/ }).first()).toBeVisible();
-  await expect(
-    page.getByText('Deployments appear here once a GitHub repository is connected', {
-      exact: false,
-    }),
-  ).toBeVisible();
+  // No GitHub repository is connected in this organization, so the card points to Integrations.
+  await expect(page.getByText('No deployments yet.', { exact: false })).toBeVisible();
 
   // The list filters by status and searches by title and number.
   await nav(page, 'Incidents').click();
