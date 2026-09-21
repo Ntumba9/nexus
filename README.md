@@ -2,11 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 10 complete (security hardening and observability).** Accounts, organizations, RBAC, projects, services,
+> **Status: Phase 11 complete (comprehensive testing).** Accounts, organizations, RBAC, projects, services,
 > incident management, the dashboard, HTTP monitoring, GitHub deployments linked to incidents, and a
 > rule-based automation and notification system with an audit log, and live updates over Server-Sent Events
 > are built and tested in CI (unit, API and worker integration against real PostgreSQL and Redis, and
-> Playwright end-to-end). Comprehensive testing and production packaging are **not done yet**; see the [roadmap](#roadmap). Sections describing those are the target design.
+> Playwright end-to-end). Production packaging is **not done yet**; see the [roadmap](#roadmap). Sections describing those are the target design.
 
 ## What it is
 
@@ -214,11 +214,18 @@ pnpm typecheck
 pnpm test                    # unit tests, no infrastructure needed
 pnpm build
 pnpm test:integration        # needs PostgreSQL + Redis (pnpm dev:infra, migrations applied)
+pnpm test:coverage           # every test, with coverage; fails below each package's floor (what CI runs)
 pnpm test:e2e                # Playwright; builds, then starts API + web (needs the same services;
                              # first run: pnpm --filter @nexus/e2e exec playwright install chromium)
 ```
 
 Integration tests skip themselves when `DATABASE_URL` / `REDIS_URL` are not set.
+
+Run integration tests away from a running development stack: its worker would pick up the tests' jobs,
+and a stopped stack leaves a backlog for them to wait behind. Use a separate Redis database
+(`REDIS_URL=redis://localhost:6379/1`) and stop the `api`, `worker` and `web` containers. What is
+tested at which level, the coverage floors and the known gaps are in
+[ADR-018](docs/decisions/ADR-018-testing-strategy.md).
 
 ## Deployment
 
@@ -258,7 +265,7 @@ local development fallback; no paid embedding provider is configured.
 | 8     | Knowledge base and RAG                        | Done    |
 | 9     | AI investigation                              | Done    |
 | 10    | Security hardening and observability          | Done    |
-| 11    | Comprehensive testing                         | Planned |
+| 11    | Comprehensive testing                         | Done    |
 | 12    | Production polish and demo                    | Planned |
 
 ## License
