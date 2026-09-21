@@ -3,6 +3,7 @@
 import { INCIDENT_SEVERITIES, SEVERITY_LABEL, type DashboardDto } from '@nexus/shared';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import { RecentDeploymentsCard } from '@/components/dashboard/recent-deployments-card';
 import { Button } from '@/components/ui/button';
 import { HealthBadge, SeverityBadge, StatusBadge } from '@/components/ui/badges';
 import { Alert, Card, EmptyState, Skeleton } from '@/components/ui/feedback';
@@ -49,11 +50,7 @@ export function DashboardView({ orgId }: { orgId: string }) {
       <div className="grid gap-4 md:grid-cols-3">
         <ActiveIncidentsCard data={data} orgId={orgId} />
         <ServiceHealthCard data={data} orgId={orgId} />
-        <Card title="Recent deployments">
-          <p className="text-sm text-muted">
-            Deployments appear here once a GitHub repository is connected (coming soon).
-          </p>
-        </Card>
+        <RecentDeploymentsCard orgId={orgId} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -7,6 +7,7 @@
 // It creates accounts with a KNOWN password, so it refuses to run against anything but localhost
 // unless you pass --allow-remote (for a public demo, also set DEMO_PRIVATE_PASSWORD; see
 // docs/hosted-demo.md). It is safe to run again: every step skips what already exists, so a run that stopped halfway resumes.
+import { createHmac } from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -265,24 +266,32 @@ async function main() {
   }
   console.log(`  project   Storefront with ${Object.keys(services).length} services`);
 
-  const checksPath = `${orgPath}/services/${services['api-gateway'].id}/checks`;
-  const checks = rows((await dana.call('GET', checksPath)).body);
-  if (checks.length > 0) {
-    console.log('  check     1 HTTP health check (existing)');
-  } else {
-    // It probes a public site, so it needs internet, and is skipped if the API refuses the URL.
+  // A health check on each production service, so the dashboard shows them monitored. They probe a
+  // public site, so they need internet, and are skipped if the API refuses the URL.
+  const CHECKS = [
+    ['api-gateway', 'Home page'],
+    ['checkout', 'Checkout health'],
+    ['search', 'Search health'],
+  ];
+  let checksMade = 0;
+  let checksSkipped = false;
+  for (const [serviceName, checkName] of CHECKS) {
+    const path = `${orgPath}/services/${services[serviceName].id}/checks`;
+    if (rows((await dana.call('GET', path)).body).length > 0) continue;
     const check = await dana.call(
       'POST',
-      checksPath,
-      { name: 'Home page', url: 'https://example.com', expectedStatus: 200, intervalSeconds: 60 },
+      path,
+      { name: checkName, url: 'https://example.com', expectedStatus: 200, intervalSeconds: 60 },
       { allow: [400, 409] },
     );
-    console.log(
-      check.status < 300
-        ? '  check     1 HTTP health check'
-        : '  check     skipped (URL not allowed)',
-    );
+    if (check.status < 300) checksMade++;
+    else checksSkipped = true;
   }
+  console.log(
+    checksSkipped
+      ? '  check     skipped (URL not allowed)'
+      : `  check     ${CHECKS.length} HTTP health checks (${checksMade} new)`,
+  );
 
   // 5. Runbooks.
   const docs = rows((await dana.call('GET', `${orgPath}/knowledge`)).body);
@@ -337,6 +346,99 @@ async function main() {
   console.log(`  ai        investigations: ${results.join(', ')}`);
   if (results.some((status) => status === 'QUEUED' || status === 'RUNNING')) {
     console.log('            (still running: they finish once the worker has processed them)');
+  }
+
+  // 8. A GitHub integration and a few deployments, delivered as signed webhooks exactly as GitHub
+  // sends them, so the deployments list, the dashboard card and the "suspected cause" on the checkout
+  // incident all show real data. It needs INTEGRATION_ENCRYPTION_KEY on the API and worker; without
+  // it the API says so and this step is skipped. The webhook secret is only shown when an
+  // integration is created, so an existing one is left alone.
+  const REPO = 'northwind/storefront';
+  const existingIntegrations = rows(
+    (await dana.call('GET', `${orgPath}/integrations/github`)).body,
+  );
+  if (existingIntegrations.some((integration) => integration.repoFullName === REPO)) {
+    console.log('  github    integration and deployments (existing)');
+  } else {
+    const created = await dana.call(
+      'POST',
+      `${orgPath}/integrations/github`,
+      { repoFullName: REPO, projectId: project.id, serviceId: services.checkout.id },
+      { allow: [503] },
+    );
+    if (created.status === 503) {
+      console.log('  github    skipped (set INTEGRATION_ENCRYPTION_KEY on the api and worker)');
+    } else {
+      const { id, webhookSecret } = created.body;
+      const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
+      const DEPLOYS = [
+        {
+          sha: 'a3f9c2e17b4d8e60f1a2b3c4d5e6f708192a3b4c',
+          state: 'success',
+          ago: 10,
+          who: 'sam-rivera',
+        },
+        {
+          sha: '5c81d0e94ab7c3f2e1d0c9b8a7f6e5d4c3b2a190',
+          state: 'success',
+          ago: 190,
+          who: 'dana-okafor',
+        },
+        {
+          sha: '9e07b4a2c1d3f5e6a8b0c2d4e6f8091a2b3c4d5e',
+          state: 'failure',
+          ago: 1500,
+          who: 'sam-rivera',
+        },
+      ];
+      for (const [i, deploy] of DEPLOYS.entries()) {
+        const body = JSON.stringify({
+          action: 'created',
+          deployment_status: { state: deploy.state, created_at: minutesAgo(deploy.ago) },
+          deployment: {
+            id: 880_000 + i,
+            sha: deploy.sha,
+            ref: 'main',
+            environment: 'production',
+            created_at: minutesAgo(deploy.ago + 1),
+            creator: { login: deploy.who },
+          },
+          repository: { full_name: REPO },
+        });
+        const signature =
+          'sha256=' + createHmac('sha256', webhookSecret).update(body).digest('hex');
+        const res = await fetch(`${API_URL}${created.body.webhookPath}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-github-event': 'deployment_status',
+            'x-github-delivery': `demo-${id}-${i}`,
+            'x-hub-signature-256': signature,
+          },
+          body,
+        });
+        if (res.status !== 202) throw new Error(`webhook delivery ${i} -> ${res.status}`);
+      }
+      // The worker records them; then the newest becomes the suspected cause of the checkout incident.
+      let deployments = [];
+      for (let i = 0; i < 20 && deployments.length < DEPLOYS.length; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        deployments = rows((await dana.call('GET', `${orgPath}/deployments?limit=10`)).body);
+      }
+      const checkoutIncident = rows(
+        (await dana.call('GET', `${orgPath}/incidents?limit=100`)).body,
+      ).find((inc) => inc.title === INCIDENTS[0].title);
+      const newest = deployments.find((d) => d.commitSha.startsWith('a3f9c2e'));
+      if (newest && checkoutIncident) {
+        await dana.call('POST', `${orgPath}/incidents/${checkoutIncident.id}/deployments`, {
+          deploymentId: newest.id,
+          relation: 'SUSPECTED',
+        });
+      }
+      console.log(
+        `  github    ${REPO}: ${deployments.length} deployments, one linked to INC-1 as the suspected cause`,
+      );
+    }
   }
 
   const viewer = PEOPLE.find((person) => person.role === 'VIEWER');

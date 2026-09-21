@@ -253,10 +253,13 @@ With the stack running locally (`docker compose --profile app up -d`):
 pnpm demo
 ```
 
-This creates a sample organization through the public API (four accounts, a project with services,
-three runbooks, two automation rules and four incidents at different stages) and prints the login
-(`dana@demo.example.com`, password `demo-passphrase-2026`). It uses accounts with a known password,
-so it refuses to run against anything but localhost. It is safe to repeat.
+This creates a sample organization through the public API: four accounts, a project with services and
+health checks, three runbooks, two automation rules, four incidents at different stages with two
+finished AI investigations, and (with `INTEGRATION_ENCRYPTION_KEY` set in `.env`, which turns on the
+GitHub integration) three deployments delivered as signed webhooks, one linked to an incident as its
+suspected cause. It prints the login (`dana@demo.example.com`, password `demo-passphrase-2026`). It uses
+accounts with a known password, so it refuses to run against anything but localhost. It is safe to
+repeat.
 
 ## Security
 
