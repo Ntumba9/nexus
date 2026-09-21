@@ -17,7 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm --filter \"./packages/*\" build && pnpm -r --if-present test",
-    "test:coverage": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present exec vitest run --coverage --coverage.reporter=text-summary",
+    "test:coverage": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present test:coverage",
     "test:integration": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present test:integration",
     "db:generate": "pnpm --filter @nexus/database generate",
     "db:migrate:dev": "pnpm --filter @nexus/database migrate:dev",

@@ -77,7 +77,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:migrate:deploy
-      - run: pnpm test:integration
+      # Runs every test (unit and integration) with coverage, and fails below the floors set in each
+      # package's vitest.config.ts.
+      - run: pnpm test:coverage
 
   e2e:
     name: End-to-end tests (Playwright)
