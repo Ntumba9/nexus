@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Switches off the monitoring checks the tests created, so they are not probed forever.
+    globalSetup: ['../../scripts/vitest-disable-test-checks.mjs'],
     // The first test that boots a Nest testing module pays a one-off cold-start cost.
     testTimeout: 30_000,
     // Suites register several users in beforeAll, and password hashing is deliberately CPU-heavy.

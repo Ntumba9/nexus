@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Switches off the monitoring checks the tests created, so they are not probed forever.
+    globalSetup: ['../scripts/vitest-disable-test-checks.mjs'],
     // Integration files share one PostgreSQL and one Redis. Several of them run real dispatchers and
     // workers on the real queues, and a dispatcher claims every due check in the database, so files
     // running in parallel steal each other's work and fail differently on every run. One file at a
