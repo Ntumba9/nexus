@@ -1,0 +1,59 @@
+# Production overlay. Use it together with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d
+#
+# What it changes, and why:
+#   - Only Caddy (80/443) is reachable from outside. PostgreSQL, Redis, the API and the web app
+#     publish no host ports; they talk to each other on the private compose network.
+#   - Caddy terminates TLS, so the session cookie can be Secure and the API can emit HSTS.
+#   - Swagger is off, and the required secrets have no defaults, so a missing one stops startup
+#     instead of running with a weak value.
+# Read docs/deployment.md before using it.
+
+services:
+  postgres:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD}
+
+  redis:
+    ports: !reset []
+
+  api:
+    ports: !reset []
+    environment:
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN to the public https URL, e.g. https://nexus.example.com}
+      COOKIE_SECURE: 'true'
+      SWAGGER_ENABLED: 'false'
+      # Exactly one hop: the web container. Caddy overwrites X-Forwarded-For with the client address
+      # and the web app forwards it, so the API sees the real client and it cannot be spoofed.
+      TRUST_PROXY_HOPS: 1
+
+  web:
+    ports: !reset []
+
+  worker:
+    environment:
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN to the public https URL, e.g. https://nexus.example.com}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: [app]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set SITE_ADDRESS to the public host name, e.g. nexus.example.com}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  caddy-data:
+  caddy-config:

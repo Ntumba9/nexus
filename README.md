@@ -2,11 +2,11 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 11 complete (comprehensive testing).** Accounts, organizations, RBAC, projects, services,
+> **Status: Phase 12 complete (production packaging and demo).** Accounts, organizations, RBAC, projects, services,
 > incident management, the dashboard, HTTP monitoring, GitHub deployments linked to incidents, and a
 > rule-based automation and notification system with an audit log, and live updates over Server-Sent Events
 > are built and tested in CI (unit, API and worker integration against real PostgreSQL and Redis, and
-> Playwright end-to-end). Production packaging is **not done yet**; see the [roadmap](#roadmap). Sections describing those are the target design.
+> Playwright end-to-end). Production deployment is documented and was verified end to end; see [docs/deployment.md](docs/deployment.md) and the [roadmap](#roadmap).
 
 ## What it is
 
@@ -229,44 +229,72 @@ tested at which level, the coverage floors and the known gaps are in
 
 ## Deployment
 
-Production Docker configuration is a Phase 12 deliverable. The current Dockerfiles are written but
-not yet built or size-optimised (Docker was unavailable); migrations are an explicit step (`migrate` service), never
-run on API start.
+A production deployment is Docker Compose plus an overlay that puts Caddy in front for HTTPS and
+publishes nothing else:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d
+```
+
+It needs `POSTGRES_PASSWORD`, `WEB_ORIGIN` (the public `https://` URL) and `SITE_ADDRESS` (the host
+name) in `.env`, and refuses to start without them. Migrations are an explicit one-shot step (the
+`migrate` service), never run on API start. The full guide, covering first deployment, upgrades,
+backup and restore, monitoring and troubleshooting, is [docs/deployment.md](docs/deployment.md); what
+was verified and what was not is in [ADR-019](docs/decisions/ADR-019-production-packaging-and-demo.md).
+The images are large (about 1.2 GB each); the reason is recorded there too.
+
+## Try it with demo data
+
+With the stack running locally (`docker compose --profile app up -d`):
+
+```bash
+pnpm demo
+```
+
+This creates a sample organization through the public API (four accounts, a project with services,
+three runbooks, two automation rules and four incidents at different stages) and prints the login
+(`dana@demo.example.com`, password `demo-passphrase-2026`). It uses accounts with a known password,
+so it refuses to run against anything but localhost. It is safe to repeat.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md) (threat model). Phase 1
-security posture: validated config, Helmet headers, CORS restricted to `WEB_ORIGIN`, no secrets in
-the repo, coarse client-facing health errors with detail only in server logs. Authentication,
-authorization and tenant isolation are Phase 2+.
+See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md) (the threat model, with what is
+implemented and what is deliberately not). In short: validated configuration, Argon2id passwords and
+revocable hashed sessions, a default-deny permission matrix, tenant isolation enforced in the
+database as well as the application, SSRF-safe monitoring and webhooks, signed and deduplicated
+inbound webhooks, secrets encrypted at rest, a strict per-request CSP, an append-only audit log, and
+rate limits. Not done, on purpose and with reasons: MFA, email verification and Row Level Security
+([ADR-017](docs/decisions/ADR-017-security-hardening-and-observability.md)).
 
-## AI architecture
+## AI
 
-Design only so far: [docs/ai.md](docs/ai.md). Embeddings will sit behind a provider interface with a
-local development fallback; no paid embedding provider is configured.
+Investigation answers are cited and verified against the incident's own evidence, and work with no
+account or key on a built-in rule engine; an OpenAI-compatible endpoint (a local Ollama or a free
+tier) is optional. Semantic search in the knowledge base works the same way. Design and limits:
+[docs/ai.md](docs/ai.md), [ADR-016](docs/decisions/ADR-016-ai-investigation.md).
 
 ## Documentation
 
 [architecture](docs/architecture.md) · [database](docs/database.md) · [security](docs/security.md) ·
-[api](docs/api.md) · [ai](docs/ai.md) · [decisions](docs/decisions/)
+[api](docs/api.md) · [ai](docs/ai.md) · [deployment](docs/deployment.md) · [decisions](docs/decisions/)
 
 ## Roadmap
 
-| Phase | Scope                                         | Status  |
-| ----- | --------------------------------------------- | ------- |
-| 0     | Architecture and design docs                  | Done    |
-| 1     | Monorepo, Next.js, NestJS, Prisma, Docker, CI | Done    |
-| 2     | Auth, organisations, RBAC                     | Done    |
-| 3     | Projects, services, incidents, dashboard      | Done    |
-| 4     | Monitoring and workers                        | Done    |
-| 5     | GitHub integration                            | Done    |
-| 6     | Automation and notifications                  | Done    |
-| 7     | Real-time                                     | Done    |
-| 8     | Knowledge base and RAG                        | Done    |
-| 9     | AI investigation                              | Done    |
-| 10    | Security hardening and observability          | Done    |
-| 11    | Comprehensive testing                         | Done    |
-| 12    | Production polish and demo                    | Planned |
+| Phase | Scope                                         | Status |
+| ----- | --------------------------------------------- | ------ |
+| 0     | Architecture and design docs                  | Done   |
+| 1     | Monorepo, Next.js, NestJS, Prisma, Docker, CI | Done   |
+| 2     | Auth, organisations, RBAC                     | Done   |
+| 3     | Projects, services, incidents, dashboard      | Done   |
+| 4     | Monitoring and workers                        | Done   |
+| 5     | GitHub integration                            | Done   |
+| 6     | Automation and notifications                  | Done   |
+| 7     | Real-time                                     | Done   |
+| 8     | Knowledge base and RAG                        | Done   |
+| 9     | AI investigation                              | Done   |
+| 10    | Security hardening and observability          | Done   |
+| 11    | Comprehensive testing                         | Done   |
+| 12    | Production polish and demo                    | Done   |
 
 ## License
 
