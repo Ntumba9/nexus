@@ -10,6 +10,11 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # The runtime is Node 22 (the pinned LTS). Its type definitions move with it, as one deliberate
+      # change that also updates .nvmrc, engines, CI and the Dockerfiles, not one major at a time.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -18,3 +23,8 @@ updates:
     directories: [/apps/api, /apps/web, /workers]
     schedule:
       interval: monthly
+    ignore:
+      # Same reason: Node is changed on purpose, to the next LTS, not to whatever release is newest
+      # (Node 25 is a short-lived line). Minor and patch updates of the Node 22 image still arrive.
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
