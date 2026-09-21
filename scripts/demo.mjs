@@ -5,7 +5,8 @@
 //   API_URL=... WEB_ORIGIN=... pnpm demo --allow-remote
 //
 // It creates accounts with a KNOWN password, so it refuses to run against anything but localhost
-// unless you pass --allow-remote. It is safe to run again: every step skips what already exists, so a run that stopped halfway resumes.
+// unless you pass --allow-remote (for a public demo, also set DEMO_PRIVATE_PASSWORD; see
+// docs/hosted-demo.md). It is safe to run again: every step skips what already exists, so a run that stopped halfway resumes.
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -14,7 +15,14 @@ const { RULE_TEMPLATES } = require('../packages/shared/dist');
 const API_URL = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
 const BASE = `${API_URL}/api/v1`;
+// The published login. On a public demo this is the ONLY password visitors ever see, so it belongs to
+// the read-only viewer account.
 const PASSWORD = process.env.DEMO_PASSWORD ?? 'demo-passphrase-2026';
+// The other accounts (owner, developer, support) can change data. For a public demo, set this to a
+// strong secret of your own so the published password does not open them. It defaults to PASSWORD,
+// which is fine on a local machine.
+const PRIVATE_PASSWORD = process.env.DEMO_PRIVATE_PASSWORD ?? PASSWORD;
+const passwordFor = (person) => (person.role === 'VIEWER' ? PASSWORD : PRIVATE_PASSWORD);
 const ORG_NAME = 'Northwind Platform';
 // Where the demo accounts live. Change it to seed a second, separate demo.
 const DOMAIN = process.env.DEMO_DOMAIN ?? 'demo.example.com';
@@ -186,14 +194,14 @@ async function main() {
     const login = await s.call(
       'POST',
       '/auth/login',
-      { email: person.email, password: PASSWORD },
+      { email: person.email, password: passwordFor(person) },
       { allow: [401] },
     );
     if (login.status === 401) {
       await s.call('POST', '/auth/register', {
         email: person.email,
         name: person.name,
-        password: PASSWORD,
+        password: passwordFor(person),
       });
     }
     sessions[person.email] = s;
@@ -307,14 +315,45 @@ async function main() {
   }
   console.log(`  incidents ${INCIDENTS.length} (open, investigating, mitigated and resolved)`);
 
+  // 7. AI investigations on the two headline incidents. Only people who can edit incidents can start
+  // one, so a read-only visitor would otherwise never see this feature. They run on the worker; if it
+  // is not running they stay queued and finish when it starts.
+  const allIncidents = rows((await dana.call('GET', `${orgPath}/incidents?limit=100`)).body);
+  const results = [];
+  for (const spec of INCIDENTS.slice(0, 2)) {
+    const incident = allIncidents.find((inc) => inc.title === spec.title);
+    const path = `${orgPath}/incidents/${incident.id}/investigations`;
+    let list = rows((await dana.call('GET', path)).body);
+    if (list.length === 0) {
+      await dana.call('POST', path, {});
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        list = rows((await dana.call('GET', path)).body);
+        if (list.some((inv) => inv.status === 'SUCCEEDED' || inv.status === 'FAILED')) break;
+      }
+    }
+    results.push(list[0]?.status ?? 'none');
+  }
+  console.log(`  ai        investigations: ${results.join(', ')}`);
+  if (results.some((status) => status === 'QUEUED' || status === 'RUNNING')) {
+    console.log('            (still running: they finish once the worker has processed them)');
+  }
+
+  const viewer = PEOPLE.find((person) => person.role === 'VIEWER');
+  const split = PRIVATE_PASSWORD !== PASSWORD;
+  console.log('');
+  console.log('Done. Open ' + WEB_ORIGIN + ' and sign in as:');
   console.log(
-    `\nDone. Open ${WEB_ORIGIN} and sign in:\n  email     ${PEOPLE[0].email}\n  password  ${PASSWORD}`,
+    '  owner   ' + PEOPLE[0].email + '   ' + (split ? '(your DEMO_PRIVATE_PASSWORD)' : PASSWORD),
   );
-  console.log(
-    `Other members: ${PEOPLE.slice(1)
-      .map((p) => p.email)
-      .join(', ')} (same password).`,
-  );
+  console.log('  viewer  ' + viewer.email + '   ' + PASSWORD + '   (read-only)');
+  if (split) {
+    console.log(
+      'Only the viewer login is safe to publish. The owner, developer and support accounts use your private password.',
+    );
+  } else {
+    console.log('All accounts share one password. That is fine locally; never publish it.');
+  }
 }
 
 main().catch((error) => {

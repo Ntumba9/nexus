@@ -76,6 +76,12 @@ describe('LoginForm', () => {
     expect(screen.getByText(/Your password was changed/)).toBeInTheDocument();
   });
 
+  it('hides the sign-up link when sign-up is closed, and keeps password recovery', () => {
+    render(<LoginForm registrationEnabled={false} />);
+    expect(screen.queryByRole('link', { name: 'Create an account' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Forgot your password?' })).toBeInTheDocument();
+  });
+
   it('links to password recovery and registration', () => {
     render(<LoginForm />);
     expect(screen.getByRole('link', { name: 'Forgot your password?' })).toHaveAttribute(

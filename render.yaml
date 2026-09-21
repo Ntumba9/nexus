@@ -1,0 +1,68 @@
+# Render Blueprint for the parts of NEXUS that cannot run on Vercel: the API and the background worker,
+# plus a Redis-compatible store for the job queue. The web app runs on Vercel and PostgreSQL on Neon
+# (see docs/hosted-demo.md). Values marked `sync: false` are asked for in the Render dashboard when the
+# blueprint is applied; they are secrets or depend on your other services, so they are never in git.
+#
+# NOT VERIFIED: this file was written without a Render account to apply it to. Expect to adjust it.
+services:
+  - type: web
+    name: nexus-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter # the free plan sleeps after 15 minutes idle, so the first visitor waits about a minute
+    healthCheckPath: /health/live
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: '10000' # Render sends traffic to port 10000
+      - key: DATABASE_URL
+        sync: false # the Neon connection string (pooled is fine)
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: nexus-redis
+          property: connectionString
+      - key: WEB_ORIGIN
+        sync: false # your Vercel URL, exactly: https://<name>.vercel.app (no trailing slash)
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false # openssl rand -base64 32
+      - key: COOKIE_SECURE
+        value: 'true'
+      - key: SWAGGER_ENABLED
+        value: 'false'
+      # Vercel, then Render's load balancer: two proxies in front of the API.
+      - key: TRUST_PROXY_HOPS
+        value: '2'
+      # Open only so the demo can be seeded (it registers the demo accounts). Change this to 'false' and
+      # redeploy as soon as that is done; docs/hosted-demo.md, step 5. Do not leave it open.
+      - key: REGISTRATION_ENABLED
+        value: 'true'
+
+  - type: worker
+    name: nexus-worker
+    runtime: docker
+    dockerfilePath: ./workers/Dockerfile
+    dockerContext: .
+    plan: starter # Render has no free background workers
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: nexus-redis
+          property: connectionString
+      - key: WEB_ORIGIN
+        sync: false
+      - key: INTEGRATION_ENCRYPTION_KEY
+        sync: false
+
+  - type: keyvalue
+    name: nexus-redis
+    plan: free
+    maxmemoryPolicy: noeviction # a job queue must never lose jobs to eviction
+    ipAllowList: [] # reachable only from your other Render services

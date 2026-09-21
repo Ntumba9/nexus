@@ -347,3 +347,42 @@ describe.skipIf(!HAS_INFRA)('authentication rate limiting (integration)', () => 
     expect(statuses).toEqual([201, 201, 201, 429, 429]);
   });
 });
+
+describe.skipIf(!HAS_INFRA)('closed sign-up (integration)', () => {
+  let t: TestApp;
+  beforeAll(async () => {
+    t = await createTestApp({ env: { REGISTRATION_ENABLED: 'false' } });
+  });
+  afterAll(async () => {
+    // createTestApp writes its settings into process.env; put this one back for any later suite.
+    delete process.env.REGISTRATION_ENABLED;
+    await t.close();
+  });
+
+  it('refuses to create an account, and creates nothing', async () => {
+    const client = new Client(t.server);
+    const email = `closed-${randomUUID()}@example.com`;
+    const res = await client.post('/auth/register', { email, password: PASSWORD, name: 'Nope' });
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('REGISTRATION_DISABLED');
+    expect(client.cookie).toBeUndefined();
+    expect(await t.prisma.user.findUnique({ where: { email } })).toBeNull();
+  });
+
+  it('still lets existing accounts log in', async () => {
+    // An account made while sign-up was open, in the same database.
+    const open = await createTestApp({ env: { REGISTRATION_ENABLED: 'true' } });
+    const user = await registerUser(open, 'Existing');
+    await open.close();
+    const closed = await createTestApp({ env: { REGISTRATION_ENABLED: 'false' } });
+    try {
+      const res = await new Client(closed.server).post('/auth/login', {
+        email: user.email,
+        password: PASSWORD,
+      });
+      expect(res.status).toBe(200);
+    } finally {
+      await closed.close();
+    }
+  });
+});

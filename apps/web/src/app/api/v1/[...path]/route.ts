@@ -7,6 +7,12 @@ import { loadEnv, webEnvSchema } from '@nexus/config';
  * network in production. It forwards only what the API needs and returns only safe headers.
  */
 export const dynamic = 'force-dynamic';
+/**
+ * Serverless hosts (Vercel) end a function after a time limit, which would cut the live-update stream.
+ * 60 s is within every plan's limit; the browser reconnects on its own and refetches, so the only effect
+ * is a fresh stream about once a minute. It has no effect where the app runs as a long-lived server.
+ */
+export const maxDuration = 60;
 
 const FORWARDED_REQUEST_HEADERS = [
   'content-type',

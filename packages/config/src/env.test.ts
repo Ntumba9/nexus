@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiEnvSchema, EnvValidationError, loadEnv, workerEnvSchema } from './index';
+import { apiEnvSchema, EnvValidationError, loadEnv, webEnvSchema, workerEnvSchema } from './index';
 
 const valid = {
   DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
@@ -147,5 +147,26 @@ describe('embedding configuration', () => {
     } catch (error) {
       expect(String(error)).not.toContain('sk-super-secret');
     }
+  });
+});
+
+describe('sign-up switch and demo login', () => {
+  it('leaves sign-up open by default, and accepts only true or false', () => {
+    expect(loadEnv(apiEnvSchema, valid).REGISTRATION_ENABLED).toBe('true');
+    expect(
+      loadEnv(apiEnvSchema, { ...valid, REGISTRATION_ENABLED: 'false' }).REGISTRATION_ENABLED,
+    ).toBe('false');
+    expect(() => loadEnv(apiEnvSchema, { ...valid, REGISTRATION_ENABLED: 'no' })).toThrow(
+      /REGISTRATION_ENABLED/,
+    );
+    expect(loadEnv(webEnvSchema, {}).REGISTRATION_ENABLED).toBe('true');
+  });
+
+  it('treats a blank demo login as not set', () => {
+    const blank = loadEnv(webEnvSchema, { DEMO_LOGIN_EMAIL: '  ', DEMO_LOGIN_PASSWORD: '' });
+    expect(blank.DEMO_LOGIN_EMAIL).toBeUndefined();
+    expect(blank.DEMO_LOGIN_PASSWORD).toBeUndefined();
+    const set = loadEnv(webEnvSchema, { DEMO_LOGIN_EMAIL: 'v@x.com', DEMO_LOGIN_PASSWORD: 'pw' });
+    expect(set.DEMO_LOGIN_EMAIL).toBe('v@x.com');
   });
 });

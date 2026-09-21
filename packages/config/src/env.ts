@@ -127,6 +127,11 @@ export const apiEnvSchema = z.object({
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
   /** Set the Secure flag on the session cookie. Defaults to true in production. */
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  /**
+   * Whether anyone may create an account. `false` closes sign-up (a public demo, or an instance that
+   * should only have the accounts already made); enforced by the API, and the web app follows it.
+   */
+  REGISTRATION_ENABLED: z.enum(['true', 'false']).default('true'),
   /** Idle session lifetime (sliding), in hours. */
   SESSION_IDLE_TTL_HOURS: z.coerce
     .number()
@@ -213,5 +218,19 @@ export const webEnvSchema = z.object({
   ...baseEnv,
   /** Where the Next.js server reaches the API (differs from the browser URL inside Docker). */
   API_INTERNAL_URL: httpUrl.default('http://localhost:3001'),
+  /** Must match the API's setting: it hides the sign-up links and page when `false`. */
+  REGISTRATION_ENABLED: z.enum(['true', 'false']).default('true'),
+  /**
+   * Optional: a login shown on the sign-in page, for a public demo. Both or neither. Only ever use an
+   * account that is safe to publish (a read-only VIEWER); the password is visible to every visitor.
+   */
+  DEMO_LOGIN_EMAIL: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  DEMO_LOGIN_PASSWORD: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
 });
 export type WebEnv = z.infer<typeof webEnvSchema>;

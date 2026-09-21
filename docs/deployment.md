@@ -104,4 +104,6 @@ Automate the dump (cron or a systemd timer), copy it off the machine, and **test
 
 ## Demo data
 
+To put a public demo on the internet (Vercel, Render and Neon) instead of running everything on one machine, see [hosted-demo.md](hosted-demo.md).
+
 `pnpm demo` fills a running instance with a sample organization, including accounts with a **known password**. It refuses to run against anything but localhost. Never run it on a real deployment.

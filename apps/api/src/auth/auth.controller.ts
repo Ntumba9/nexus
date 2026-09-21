@@ -33,6 +33,7 @@ function clientMeta(request: AppRequest): ClientMeta {
 @Controller('auth')
 export class AuthController {
   private readonly secureCookie: boolean;
+  private readonly registrationEnabled: boolean;
 
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
@@ -42,6 +43,7 @@ export class AuthController {
     this.secureCookie = env.COOKIE_SECURE
       ? env.COOKIE_SECURE === 'true'
       : env.NODE_ENV === 'production';
+    this.registrationEnabled = env.REGISTRATION_ENABLED === 'true';
   }
 
   @Public()
@@ -53,6 +55,10 @@ export class AuthController {
     @Req() request: AppRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<MeResponse> {
+    // Checked first: a closed door answers the same to everyone and spends no rate-limit budget.
+    if (!this.registrationEnabled) {
+      throw ApiError.forbidden('REGISTRATION_DISABLED', 'Sign-up is turned off on this server');
+    }
     await this.limits.beforeRegister(request.ip);
     const { me, session } = await this.auth.register(body, clientMeta(request));
     setSessionCookie(response, session.token, session.expiresAt, this.secureCookie);
