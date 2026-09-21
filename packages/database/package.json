@@ -20,7 +20,7 @@
     "@prisma/client": "6.19.3"
   },
   "devDependencies": {
-    "@types/node": "22.20.3",
+    "@types/node": "26.6.1",
     "prisma": "6.19.3",
     "vitest": "3.2.7"
   }
