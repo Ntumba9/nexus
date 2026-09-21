@@ -17,7 +17,7 @@ jobs:
     name: Lint, typecheck, unit tests, build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6 # version comes from "packageManager" in package.json
       - uses: actions/setup-node@v4
         with:
@@ -34,7 +34,7 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
@@ -69,7 +69,7 @@ jobs:
       DATABASE_URL: postgresql://nexus:ci_password@localhost:5432/nexus
       REDIS_URL: redis://localhost:6379
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
@@ -112,7 +112,7 @@ jobs:
       # Enables GitHub integrations. A throwaway key for CI only; it protects nothing.
       INTEGRATION_ENCRYPTION_KEY: 'Y2ktb25seS1rZXktMzItYnl0ZXMtbG9uZy1vaw0hSAI='
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
@@ -136,7 +136,7 @@ jobs:
     name: Docker images build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate compose file
         run: |
           cp .env.example .env
