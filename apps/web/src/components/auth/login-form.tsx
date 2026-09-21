@@ -14,7 +14,7 @@ import { ApiError, apiFetch, describeError } from '@/lib/api-client';
 
 type LoginValues = z.input<typeof loginSchema>;
 
-export function LoginForm() {
+export function LoginForm({ registrationEnabled = true }: { registrationEnabled?: boolean }) {
   const router = useRouter();
   const justReset = useSearchParams().get('reset') === '1';
   const [formError, setFormError] = useState<string | null>(null);
@@ -76,12 +76,14 @@ export function LoginForm() {
           Forgot your password?
         </Link>
       </p>
-      <p className="text-center text-sm text-muted">
-        New to NEXUS?{' '}
-        <Link href="/register" className="text-accent hover:underline">
-          Create an account
-        </Link>
-      </p>
+      {registrationEnabled && (
+        <p className="text-center text-sm text-muted">
+          New to NEXUS?{' '}
+          <Link href="/register" className="text-accent hover:underline">
+            Create an account
+          </Link>
+        </p>
+      )}
     </form>
   );
 }

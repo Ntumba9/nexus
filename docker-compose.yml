@@ -87,6 +87,7 @@ services:
       AI_API_KEY:
       METRICS_TOKEN:
       API_RATE_LIMIT_PER_MINUTE:
+      REGISTRATION_ENABLED:
       REALTIME_HEARTBEAT_MS:
     ports:
       - '127.0.0.1:${API_PORT:-3001}:3001'
@@ -118,6 +119,10 @@ services:
     environment:
       NODE_ENV: production
       API_INTERNAL_URL: http://api:3001
+      # Passed through only when set in .env. REGISTRATION_ENABLED must match the api's.
+      REGISTRATION_ENABLED:
+      DEMO_LOGIN_EMAIL:
+      DEMO_LOGIN_PASSWORD:
     ports:
       - '127.0.0.1:3000:3000'
     depends_on:
