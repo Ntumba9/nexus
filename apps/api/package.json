@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --exclude \"**/*.integration.test.ts\" --exclude \"**/node_modules/**\"",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary",
     "test:integration": "vitest run integration"
   },
   "dependencies": {

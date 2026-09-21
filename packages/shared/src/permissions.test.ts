@@ -22,6 +22,8 @@ const EXPECTED: Record<Role, Permission[]> = {
     'incidents.update',
     'incidents.resolve',
     'services.manage',
+    'knowledge.read',
+    'knowledge.manage',
   ],
   SUPPORT: [
     'organization.read',
@@ -30,8 +32,9 @@ const EXPECTED: Record<Role, Permission[]> = {
     'incidents.read',
     'incidents.create',
     'incidents.update',
+    'knowledge.read',
   ],
-  VIEWER: ['organization.read', 'users.read', 'projects.read', 'incidents.read'],
+  VIEWER: ['organization.read', 'users.read', 'projects.read', 'incidents.read', 'knowledge.read'],
 };
 
 describe('permission matrix', () => {

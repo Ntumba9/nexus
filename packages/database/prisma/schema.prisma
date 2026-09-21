@@ -55,6 +55,10 @@ model User {
   rulesCreated      AutomationRule[]     @relation("RuleCreatedBy")
   webhooksCreated   OutboundWebhook[]    @relation("WebhookCreatedBy")
   auditEntries      AuditLog[]           @relation("AuditActor")
+  documentsCreated  KnowledgeDocument[]  @relation("DocumentCreatedBy")
+  documentsUpdated  KnowledgeDocument[]  @relation("DocumentUpdatedBy")
+  investigations    AiInvestigation[]    @relation("InvestigationRequestedBy")
+  passwordResets    PasswordReset[]
 }
 
 model Organization {
@@ -83,6 +87,9 @@ model Organization {
   notifications        Notification[]
   outboundWebhooks     OutboundWebhook[]
   auditLogs            AuditLog[]
+  knowledgeDocuments   KnowledgeDocument[]
+  knowledgeChunks      KnowledgeChunk[]
+  investigations       AiInvestigation[]
 }
 
 model OrganizationMember {
@@ -178,6 +185,7 @@ enum IncidentEventType {
   MONITORING_SIGNAL
   DEPLOYMENT_LINKED
   AUTOMATION_EXECUTED
+  AI_INVESTIGATED
 }
 
 enum ActorType {
@@ -257,6 +265,7 @@ model Incident {
   assignments    IncidentAssignment[]
   tags           IncidentTag[]
   deployments    IncidentDeployment[]
+  investigations AiInvestigation[]
 
   @@unique([organizationId, number])
   @@unique([organizationId, id])
@@ -681,4 +690,126 @@ model AuditLog {
 
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([organizationId, action])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 8: knowledge base.
+//
+// Chunks reference their document through a composite foreign key, so a chunk can only ever belong
+// to a document of its own organisation. The vector and full-text search indexes are created in the
+// migration SQL (Prisma cannot express them); every search query filters by organisation first.
+// ---------------------------------------------------------------------------------------------
+
+model KnowledgeDocument {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @db.Uuid
+  title          String
+  slug           String
+  contentMd      String           @default("")
+  tags           String[]         @default([])
+  createdById    String?          @db.Uuid
+  updatedById    String?          @db.Uuid
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User?            @relation("DocumentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy      User?            @relation("DocumentUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  chunks         KnowledgeChunk[]
+
+  @@unique([organizationId, slug])
+  @@unique([organizationId, id])
+  @@index([organizationId, updatedAt(sort: Desc)])
+}
+
+/// A searchable piece of a document. `embedding` is only ever read and written with raw SQL.
+model KnowledgeChunk {
+  id             String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                      @db.Uuid
+  documentId     String                      @db.Uuid
+  ordinal        Int
+  /// The document title and the headings above the chunk, searched together with the text.
+  heading        String
+  content        String
+  /// SHA-256 of heading + content: an unchanged chunk keeps its embedding when a document is edited.
+  contentHash    String
+  embedding      Unsupported("vector(384)")?
+  /// Which provider produced the vector. Vectors from different models are never compared.
+  embeddingModel String?
+  embeddedAt     DateTime?                   @db.Timestamptz(6)
+  createdAt      DateTime                    @default(now()) @db.Timestamptz(6)
+  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document       KnowledgeDocument           @relation(fields: [organizationId, documentId], references: [organizationId, id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([organizationId, documentId, ordinal])
+  @@index([organizationId, embeddingModel])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 9: AI investigation (ADR-016).
+//
+// An investigation stores the exact material it was given (`context`) next to its verified answer
+// (`output`), so every citation can be opened and read later. It references its incident through the
+// composite tenant key. At most one investigation per incident can be active at a time (a partial
+// unique index in the migration SQL).
+// ---------------------------------------------------------------------------------------------
+
+enum InvestigationStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model AiInvestigation {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String              @db.Uuid
+  incidentId       String              @db.Uuid
+  requestedById    String?             @db.Uuid
+  status           InvestigationStatus @default(QUEUED)
+  /// What the person asked, if anything. Untrusted text; only ever shown escaped.
+  question         String?
+  providerId       String
+  /// The provider as a person would name it ("llama3.1 (Ollama)"), kept even if configuration changes.
+  providerLabel    String
+  /// The sources the analysis saw (ContextSource[]). Redacted and length-limited before it is stored.
+  context          Json                @default("[]")
+  /// The verified answer (InvestigationOutput). Set only when SUCCEEDED.
+  output           Json?
+  droppedCitations Int                 @default(0)
+  droppedClaims    Int                 @default(0)
+  downgradedCauses Int                 @default(0)
+  truncated        Boolean             @default(false)
+  /// A short, safe reason. Never a provider message, a URL or a key.
+  error            String?
+  attempts         Int                 @default(0)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(6)
+  startedAt        DateTime?           @db.Timestamptz(6)
+  finishedAt       DateTime?           @db.Timestamptz(6)
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  incident         Incident            @relation(fields: [organizationId, incidentId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  requestedBy      User?               @relation("InvestigationRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, incidentId, createdAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 10: password reset (ADR-017).
+//
+// Only a SHA-256 of the token is stored, like session tokens, so a database leak yields no usable
+// reset. A token is single-use (usedAt) and expires after an hour.
+// ---------------------------------------------------------------------------------------------
+
+model PasswordReset {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(6)
+  usedAt    DateTime? @db.Timestamptz(6)
+  ip        String?
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

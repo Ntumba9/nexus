@@ -7,6 +7,7 @@ import { Alert, EmptyState, Skeleton } from '@/components/ui/feedback';
 import { apiFetch, describeError } from '@/lib/api-client';
 import { formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 
 /** The full inbox: everything sent to the signed-in user in this organization. */
@@ -17,7 +18,7 @@ export function NotificationsList({ orgId }: { orgId: string }) {
     queryFn: ({ pageParam }) => fetchers.notifications(orgId, { before: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextBefore ?? undefined,
-    refetchInterval: 30_000,
+    refetchInterval: pollEvery(30_000),
   });
 
   const refresh = () =>

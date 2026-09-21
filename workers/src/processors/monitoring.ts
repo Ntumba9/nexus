@@ -8,6 +8,8 @@ import {
   automationJobPayloadSchema,
   healthCheckPayloadSchema,
   maintenancePayloadSchema,
+  publishRealtime,
+  type RealtimePublisher,
   webhookProcessingPayloadSchema,
 } from '@nexus/shared';
 import type { Job } from 'bullmq';
@@ -25,7 +27,7 @@ import { processExecution, type ExecutionOutcome, type ExecutorDeps } from '../a
 import { cleanupOldResults, cleanupOldWebhookEvents } from '../monitoring/maintenance';
 
 export function healthCheckWorker(
-  deps: { prisma: PrismaClient; check: Checker; logger: Logger },
+  deps: { prisma: PrismaClient; check: Checker; logger: Logger; realtime?: RealtimePublisher },
   concurrency: number,
 ): WorkerDefinition<unknown, HealthCheckOutcome> {
   return {
@@ -35,7 +37,15 @@ export function healthCheckWorker(
       if (job.name !== HEALTH_CHECK_JOBS.run)
         throw new Error(`Unknown health-check job: ${job.name}`);
       // Every producer is an input boundary: validate even internal payloads.
-      return processHealthCheck(deps, healthCheckPayloadSchema.parse(job.data));
+      const payload = healthCheckPayloadSchema.parse(job.data);
+      const outcome = await processHealthCheck(deps, payload);
+      if (outcome.kind === 'recorded' && deps.realtime) {
+        await publishRealtime(deps.realtime, payload.organizationId, [
+          { topic: 'monitoring' },
+          { topic: 'services' },
+        ]);
+      }
+      return outcome;
     },
   };
 }
@@ -80,7 +90,7 @@ export function maintenanceWorker(deps: {
 }
 
 export function webhookWorker(
-  deps: { prisma: PrismaClient; logger: Logger },
+  deps: { prisma: PrismaClient; logger: Logger; realtime?: RealtimePublisher },
   concurrency: number,
 ): WorkerDefinition<unknown, WebhookProcessingOutcome> {
   return {
@@ -91,6 +101,9 @@ export function webhookWorker(
       const payload = webhookProcessingPayloadSchema.parse(job.data);
       try {
         const outcome = await processWebhookEvent(deps, payload);
+        if (outcome.status === 'processed' && deps.realtime) {
+          await publishRealtime(deps.realtime, payload.organizationId, [{ topic: 'deployments' }]);
+        }
         if (outcome.status === 'failed') {
           deps.logger.warn('webhook event could not be processed', {
             webhookEventId: payload.webhookEventId,
@@ -115,7 +128,7 @@ export function webhookWorker(
 }
 
 export function automationWorker(
-  deps: ExecutorDeps,
+  deps: ExecutorDeps & { realtime?: RealtimePublisher },
   concurrency: number,
 ): WorkerDefinition<unknown, ExecutionOutcome> {
   return {
@@ -127,7 +140,34 @@ export function automationWorker(
       }
       const payload = automationJobPayloadSchema.parse(job.data);
       const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
-      return processExecution(deps, payload, { isFinalAttempt });
+      const outcome = await processExecution(deps, payload, { isFinalAttempt });
+      if (outcome.status === 'finished' && deps.realtime) {
+        await announceExecution(deps.prisma, deps.realtime, payload);
+      }
+      return outcome;
     },
   };
+}
+
+/**
+ * A finished run changes the executions list, may have notified people (each is told only about their
+ * own inbox) and may have opened an incident or noted the run on one.
+ */
+async function announceExecution(
+  prisma: PrismaClient,
+  realtime: RealtimePublisher,
+  payload: { executionId: string; organizationId: string },
+): Promise<void> {
+  const notified = await prisma.notification
+    .findMany({
+      where: { executionId: payload.executionId, organizationId: payload.organizationId },
+      select: { userId: true },
+    })
+    .catch(() => []);
+  const users = [...new Set(notified.map((row) => row.userId))];
+  await publishRealtime(realtime, payload.organizationId, [
+    { topic: 'automation' },
+    { topic: 'incidents' },
+    ...users.map((userId) => ({ topic: 'notifications' as const, userId })),
+  ]);
 }

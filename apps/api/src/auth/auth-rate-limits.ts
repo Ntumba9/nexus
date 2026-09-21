@@ -31,6 +31,24 @@ export class AuthRateLimits {
     await this.limiter.consume('login:account', email, this.perAccount, this.windowSeconds);
   }
 
+  /**
+   * Asking for a reset email is limited per address (so nobody can flood one inbox) and per IP (so
+   * one machine cannot sweep for accounts). It answers the same whether or not the account exists.
+   */
+  async beforeForgotPassword(ip: string | undefined, email: string): Promise<void> {
+    await this.limiter.consume('forgot:ip', ip ?? 'unknown', this.perAccount, this.windowSeconds);
+    await this.limiter.consume('forgot:account', email, 3, 3600);
+  }
+
+  /** Redeeming a token is guess-resistant by entropy already; this only stops hammering. */
+  async beforeResetPassword(ip: string | undefined): Promise<void> {
+    await this.limiter.consume('reset:ip', ip ?? 'unknown', this.perAccount, this.windowSeconds);
+  }
+
+  async beforeChangePassword(userId: string): Promise<void> {
+    await this.limiter.consume('change-password:user', userId, this.perAccount, this.windowSeconds);
+  }
+
   async beforeRegister(ip: string | undefined): Promise<void> {
     await this.limiter.consume('register:ip', ip ?? 'unknown', this.perAccount, this.windowSeconds);
   }

@@ -1,0 +1,19 @@
+# Reverse proxy for a production NEXUS. Caddy obtains and renews the TLS certificate by itself.
+# SITE_ADDRESS is the public host name (for example nexus.example.com); it must resolve to this
+# machine, with ports 80 and 443 reachable, before Caddy can get a certificate.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Caddy replaces any X-Forwarded-For sent by the client with the real client address, which the
+	# API then reads (TRUST_PROXY_HOPS=1: the web container is the one hop it trusts).
+	reverse_proxy web:3000 {
+		# The live-updates stream (Server-Sent Events) must not be buffered.
+		flush_interval -1
+	}
+
+	header {
+		# Also sent by the web app; here as a backstop for error pages Caddy answers itself.
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

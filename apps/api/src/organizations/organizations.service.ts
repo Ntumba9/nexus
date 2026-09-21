@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { PrismaClient } from '@nexus/database';
 import type { MembershipDto, OrganizationDetailDto } from '@nexus/shared';
+import { AuditService } from '../audit/audit.service';
 import { ApiError } from '../common/api-error';
 import type { TenantContext } from '../common/request-context';
 import { slugify } from '../common/slug';
@@ -10,7 +11,10 @@ const UNIQUE_VIOLATION = 'P2002';
 
 @Injectable()
 export class OrganizationsService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(AuditService) private readonly audit: AuditService,
+  ) {}
 
   /** Any authenticated user may create an organisation; they become its first OWNER, atomically. */
   async create(userId: string, name: string): Promise<OrganizationDetailDto> {
@@ -52,9 +56,22 @@ export class OrganizationsService {
   }
 
   async update(tenant: TenantContext, name: string): Promise<OrganizationDetailDto> {
-    const org = await this.prisma.organization.update({
-      where: { id: tenant.organizationId },
-      data: { name },
+    const org = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.organization.findUnique({
+        where: { id: tenant.organizationId },
+        select: { name: true },
+      });
+      const updated = await tx.organization.update({
+        where: { id: tenant.organizationId },
+        data: { name },
+      });
+      await this.audit.record(tx, tenant, undefined, {
+        action: 'organization.updated',
+        resourceType: 'organization',
+        resourceId: tenant.organizationId,
+        metadata: { name, previous: before?.name ?? null },
+      });
+      return updated;
     });
     return toDetail(org, tenant.role);
   }

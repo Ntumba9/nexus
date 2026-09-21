@@ -73,6 +73,21 @@ services:
       AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
       AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-900}
       MONITORING_ALLOW_PRIVATE_NETWORKS: ${MONITORING_ALLOW_PRIVATE_NETWORKS:-false}
+      # Passed through only when set in .env (a bare name; an empty value would fail validation), so
+      # the defaults in packages/config apply otherwise. The api and the worker must agree on the
+      # embedding and AI settings.
+      EMBEDDING_PROVIDER:
+      EMBEDDING_API_URL:
+      EMBEDDING_MODEL:
+      EMBEDDING_API_KEY:
+      AI_PROVIDER:
+      AI_API_URL:
+      AI_MODEL:
+      AI_VENDOR:
+      AI_API_KEY:
+      METRICS_TOKEN:
+      API_RATE_LIMIT_PER_MINUTE:
+      REALTIME_HEARTBEAT_MS:
     ports:
       - '127.0.0.1:${API_PORT:-3001}:3001'
     depends_on:
@@ -145,6 +160,23 @@ services:
       SMTP_URL: ${SMTP_URL:-}
       EMAIL_FROM: '${EMAIL_FROM:-NEXUS <nexus@localhost>}'
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      # Passed through only when set in .env; see the api service above.
+      EMBEDDING_PROVIDER:
+      EMBEDDING_API_URL:
+      EMBEDDING_MODEL:
+      EMBEDDING_API_KEY:
+      AI_PROVIDER:
+      AI_API_URL:
+      AI_MODEL:
+      AI_VENDOR:
+      AI_API_KEY:
+      METRICS_TOKEN:
+      MONITORING_DISPATCH_INTERVAL_MS:
+      WEBHOOK_RETENTION_DAYS:
+      AUTOMATION_DISPATCH_INTERVAL_MS:
+      AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR:
+      AUTOMATION_RETENTION_DAYS:
+      NOTIFICATION_RETENTION_DAYS:
     depends_on:
       migrate:
         condition: service_completed_successfully

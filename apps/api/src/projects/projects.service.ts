@@ -8,6 +8,7 @@ import type {
   UpdateProjectInput,
   UpdateServiceInput,
 } from '@nexus/shared';
+import { AuditService } from '../audit/audit.service';
 import { ApiError } from '../common/api-error';
 import type { TenantContext } from '../common/request-context';
 import { slugify } from '../common/slug';
@@ -72,7 +73,10 @@ function toServiceDto(row: Prisma.ServiceGetPayload<{ select: typeof serviceSele
  */
 @Injectable()
 export class ProjectsService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(AuditService) private readonly audit: AuditService,
+  ) {}
 
   async list(tenant: TenantContext, includeArchived: boolean): Promise<ProjectDto[]> {
     const rows = await this.prisma.project.findMany({
@@ -98,14 +102,23 @@ export class ProjectsService {
   async create(tenant: TenantContext, input: CreateProjectInput): Promise<ProjectDto> {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const row = await this.prisma.project.create({
-          data: {
-            organizationId: tenant.organizationId,
-            name: input.name,
-            description: input.description,
-            slug: slugify(input.name, 'project'),
-          },
-          select: projectSelect,
+        const row = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.project.create({
+            data: {
+              organizationId: tenant.organizationId,
+              name: input.name,
+              description: input.description,
+              slug: slugify(input.name, 'project'),
+            },
+            select: projectSelect,
+          });
+          await this.audit.record(tx, tenant, undefined, {
+            action: 'project.created',
+            resourceType: 'project',
+            resourceId: created.id,
+            metadata: { name: input.name },
+          });
+          return created;
         });
         return toProjectDto(row);
       } catch (error) {
@@ -116,11 +129,23 @@ export class ProjectsService {
   }
 
   async update(tenant: TenantContext, id: string, input: UpdateProjectInput): Promise<ProjectDto> {
-    const result = await this.prisma.project.updateMany({
-      where: { id, organizationId: tenant.organizationId },
-      data: input,
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.project.updateMany({
+        where: { id, organizationId: tenant.organizationId },
+        data: input,
+      });
+      if (result.count === 0) throw ApiError.notFound('Project not found');
+      const now = await tx.project.findFirst({
+        where: { id, organizationId: tenant.organizationId },
+        select: { name: true },
+      });
+      await this.audit.record(tx, tenant, undefined, {
+        action: 'project.updated',
+        resourceType: 'project',
+        resourceId: id,
+        metadata: { name: now?.name ?? null, changed: Object.keys(input) },
+      });
     });
-    if (result.count === 0) throw ApiError.notFound('Project not found');
     return this.get(tenant, id);
   }
 
@@ -144,13 +169,26 @@ export class ProjectsService {
         where: { projectId: id, organizationId: tenant.organizationId, archivedAt: null },
         data: { archivedAt: now },
       });
+      const project = await tx.project.findFirst({
+        where: { id, organizationId: tenant.organizationId },
+        select: { name: true },
+      });
+      await this.audit.record(tx, tenant, undefined, {
+        action: 'project.archived',
+        resourceType: 'project',
+        resourceId: id,
+        metadata: { name: project?.name ?? null },
+      });
     });
   }
 }
 
 @Injectable()
 export class ServicesService {
-  constructor(@Inject(PRISMA) private readonly prisma: PrismaClient) {}
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(AuditService) private readonly audit: AuditService,
+  ) {}
 
   async list(
     tenant: TenantContext,
@@ -191,9 +229,18 @@ export class ServicesService {
       throw ApiError.conflict('PROJECT_ARCHIVED', 'Cannot add services to an archived project');
     }
     try {
-      const row = await this.prisma.service.create({
-        data: { organizationId: tenant.organizationId, projectId, ...input },
-        select: serviceSelect,
+      const row = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.service.create({
+          data: { organizationId: tenant.organizationId, projectId, ...input },
+          select: serviceSelect,
+        });
+        await this.audit.record(tx, tenant, undefined, {
+          action: 'service.created',
+          resourceType: 'service',
+          resourceId: created.id,
+          metadata: { name: input.name, environment: input.environment ?? null },
+        });
+        return created;
       });
       return toServiceDto(row);
     } catch (error) {
@@ -209,11 +256,23 @@ export class ServicesService {
 
   async update(tenant: TenantContext, id: string, input: UpdateServiceInput): Promise<ServiceDto> {
     try {
-      const result = await this.prisma.service.updateMany({
-        where: { id, organizationId: tenant.organizationId },
-        data: input,
+      await this.prisma.$transaction(async (tx) => {
+        const result = await tx.service.updateMany({
+          where: { id, organizationId: tenant.organizationId },
+          data: input,
+        });
+        if (result.count === 0) throw ApiError.notFound('Service not found');
+        const now = await tx.service.findFirst({
+          where: { id, organizationId: tenant.organizationId },
+          select: { name: true },
+        });
+        await this.audit.record(tx, tenant, undefined, {
+          action: 'service.updated',
+          resourceType: 'service',
+          resourceId: id,
+          metadata: { name: now?.name ?? null, changed: Object.keys(input) },
+        });
       });
-      if (result.count === 0) throw ApiError.notFound('Service not found');
     } catch (error) {
       if (isCode(error, UNIQUE_VIOLATION)) {
         throw ApiError.conflict(
@@ -227,16 +286,29 @@ export class ServicesService {
   }
 
   async archive(tenant: TenantContext, id: string): Promise<void> {
-    const result = await this.prisma.service.updateMany({
-      where: { id, organizationId: tenant.organizationId, archivedAt: null },
-      data: { archivedAt: new Date() },
-    });
-    if (result.count === 0) {
-      const exists = await this.prisma.service.findFirst({
-        where: { id, organizationId: tenant.organizationId },
-        select: { id: true },
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.service.updateMany({
+        where: { id, organizationId: tenant.organizationId, archivedAt: null },
+        data: { archivedAt: new Date() },
       });
-      if (!exists) throw ApiError.notFound('Service not found');
-    }
+      if (result.count === 0) {
+        const exists = await tx.service.findFirst({
+          where: { id, organizationId: tenant.organizationId },
+          select: { id: true },
+        });
+        if (!exists) throw ApiError.notFound('Service not found');
+        return; // already archived
+      }
+      const service = await tx.service.findFirst({
+        where: { id, organizationId: tenant.organizationId },
+        select: { name: true },
+      });
+      await this.audit.record(tx, tenant, undefined, {
+        action: 'service.archived',
+        resourceType: 'service',
+        resourceId: id,
+        metadata: { name: service?.name ?? null },
+      });
+    });
   }
 }

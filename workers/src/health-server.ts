@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { bearerMatches } from '@nexus/shared';
 import type { Logger } from './logger';
 
 /** A named dependency probe: resolves if healthy, rejects otherwise. */
@@ -10,7 +11,13 @@ export type ReadinessProbe = { name: string; check: () => Promise<unknown> };
  * either cannot do its work.
  */
 export function startHealthServer(
-  options: { host: string; port: number; probes: ReadinessProbe[] },
+  options: {
+    host: string;
+    port: number;
+    probes: ReadinessProbe[];
+    /** `GET /metrics`: only exists when a token is configured, and then needs it as a bearer token. */
+    metrics?: { token: string; render: () => Promise<string> };
+  },
   logger: Logger,
 ): Server {
   const server = createServer((req, res) => {
@@ -21,6 +28,24 @@ export function startHealthServer(
 
     if (req.method !== 'GET') return send(405, { status: 'error' });
     if (req.url === '/health/live') return send(200, { status: 'ok' });
+    if (req.url === '/metrics') {
+      const metrics = options.metrics;
+      if (!metrics) return send(404, { status: 'not_found' });
+      if (!bearerMatches(req.headers.authorization, metrics.token)) {
+        return send(401, { status: 'unauthorized' });
+      }
+      void metrics.render().then(
+        (text) => {
+          res.writeHead(200, {
+            'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+            'cache-control': 'no-store',
+          });
+          res.end(text);
+        },
+        () => send(500, { status: 'error' }),
+      );
+      return;
+    }
     if (req.url === '/health/ready') {
       void Promise.all(
         options.probes.map(async (probe) => {

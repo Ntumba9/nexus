@@ -30,6 +30,21 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fails on any known high or critical advisory in what actually ships (production dependencies).
+      # A transitive one is fixed with a `pnpm.overrides` entry in package.json, with a note saying why.
+      - run: pnpm audit --prod --audit-level high
+
   integration:
     name: Integration tests (PostgreSQL + Redis)
     runs-on: ubuntu-latest
@@ -62,7 +77,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:migrate:deploy
-      - run: pnpm test:integration
+      # Runs every test (unit and integration) with coverage, and fails below the floors set in each
+      # package's vitest.config.ts.
+      - run: pnpm test:coverage
 
   e2e:
     name: End-to-end tests (Playwright)
@@ -124,5 +141,13 @@ jobs:
         run: |
           cp .env.example .env
           docker compose --profile app config --quiet
+      - name: Validate the production overlay and Caddyfile
+        run: |
+          export POSTGRES_PASSWORD=ci WEB_ORIGIN=https://nexus.example.com SITE_ADDRESS=nexus.example.com
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app config --quiet
+          # Only Caddy may publish ports in production.
+          published=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app config --format json             | python3 -c "import sys,json; c=json.load(sys.stdin)['services']; print(' '.join(sorted(n for n,s in c.items() if s.get('ports'))))")
+          test "$published" = "caddy" || { echo "Services publishing ports: $published"; exit 1; }
+          docker run --rm -e SITE_ADDRESS=nexus.example.com -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"             caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - name: Build images
         run: docker compose --profile app build

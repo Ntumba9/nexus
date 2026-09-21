@@ -1,0 +1,20 @@
+# Keeps dependencies current, so security fixes arrive as pull requests instead of being noticed late.
+# Related updates are grouped so a week's worth is one PR, not twenty.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: docker
+    directories: [/apps/api, /apps/web, /workers]
+    schedule:
+      interval: monthly

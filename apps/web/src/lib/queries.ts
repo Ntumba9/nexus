@@ -1,4 +1,5 @@
 import type {
+  AiStatusDto,
   AuditLogPageDto,
   AutomationRuleDto,
   DashboardDto,
@@ -9,6 +10,10 @@ import type {
   IncidentDetailDto,
   IncidentEventDto,
   IncidentPageDto,
+  InvestigationDto,
+  KnowledgeDocumentDto,
+  KnowledgeDocumentSummaryDto,
+  KnowledgeSearchResultDto,
   MemberDto,
   MonitoringCheckDto,
   MonitoringResultPageDto,
@@ -41,6 +46,12 @@ export const keys = {
   deployments: (orgId: string, serviceId?: string) =>
     ['deployments', orgId, serviceId ?? 'all'] as const,
   incidentDeployments: (orgId: string, id: string) => ['incident-deployments', orgId, id] as const,
+  knowledge: (orgId: string, tag?: string) => ['knowledge', orgId, 'list', tag ?? 'all'] as const,
+  knowledgeDoc: (orgId: string, id: string) => ['knowledge', orgId, 'doc', id] as const,
+  knowledgeSearch: (orgId: string, q: string) => ['knowledge-search', orgId, q] as const,
+  incidentRunbooks: (orgId: string, id: string) => ['incident-runbooks', orgId, id] as const,
+  aiStatus: (orgId: string) => ['ai', orgId, 'status'] as const,
+  investigations: (orgId: string, id: string) => ['ai', orgId, 'investigations', id] as const,
 };
 
 export const fetchers = {
@@ -96,6 +107,23 @@ export const fetchers = {
     ).then((r) => r.data),
   incidentDeployments: (orgId: string, id: string) =>
     apiFetch<IncidentDeploymentsDto>(`/orgs/${orgId}/incidents/${id}/deployments`),
+  knowledge: (orgId: string, tag?: string) =>
+    apiFetch<{ data: KnowledgeDocumentSummaryDto[] }>(
+      `/orgs/${orgId}/knowledge${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`,
+    ).then((r) => r.data),
+  knowledgeDoc: (orgId: string, id: string) =>
+    apiFetch<KnowledgeDocumentDto>(`/orgs/${orgId}/knowledge/${id}`),
+  knowledgeSearch: (orgId: string, q: string) =>
+    apiFetch<KnowledgeSearchResultDto>(
+      `/orgs/${orgId}/knowledge/search?q=${encodeURIComponent(q)}`,
+    ),
+  incidentRunbooks: (orgId: string, id: string) =>
+    apiFetch<KnowledgeSearchResultDto>(`/orgs/${orgId}/knowledge/for-incident/${id}`),
+  aiStatus: (orgId: string) => apiFetch<AiStatusDto>(`/orgs/${orgId}/ai/status`),
+  investigations: (orgId: string, id: string) =>
+    apiFetch<{ data: InvestigationDto[] }>(`/orgs/${orgId}/incidents/${id}/investigations`).then(
+      (r) => r.data,
+    ),
   results: (orgId: string, checkId: string, limit = 20) =>
     apiFetch<MonitoringResultPageDto>(`/orgs/${orgId}/checks/${checkId}/results?limit=${limit}`),
 };

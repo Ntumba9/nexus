@@ -9,6 +9,7 @@ See "Local development" in the [README](README.md).
 ```bash
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
 pnpm test:integration   # if you touched the database, queues or workers (needs Docker services)
+pnpm test:coverage      # what CI runs: everything, with coverage floors (see ADR-018)
 ```
 
 CI runs the same gates and fails on any of them.

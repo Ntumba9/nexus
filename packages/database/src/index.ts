@@ -4,6 +4,9 @@ export { Prisma, PrismaClient } from '@prisma/client';
 export * from './audit';
 export * from './domain-events';
 export * from './incident-writes';
+export * from './knowledge/embeddings';
+export * from './knowledge/retrieve';
+export * from './knowledge/write';
 export * from './service-health';
 
 /** Create a Prisma client for an explicit connection string (never read from the environment here). */
@@ -21,3 +24,5 @@ export function createPrismaClient(databaseUrl: string): PrismaClient {
 export async function pingDatabase(client: PrismaClient): Promise<void> {
   await client.$queryRaw`SELECT 1`;
 }
+export * from './ai/providers';
+export * from './ai/context';

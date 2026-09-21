@@ -111,6 +111,26 @@ const AUDIT_VERB: Record<AuditAction, string> = {
   'outbound_webhook.disabled': 'disabled the outbound webhook',
   'integration.github.created': 'connected the GitHub repository',
   'integration.github.disabled': 'disconnected the GitHub repository',
+  'knowledge.document.created': 'created the document',
+  'knowledge.document.updated': 'edited the document',
+  'knowledge.document.deleted': 'deleted the document',
+  'ai.investigation.requested': 'started an investigation of',
+  'auth.signed_in': 'signed in',
+  'auth.signed_out': 'signed out',
+  'auth.signed_out_everywhere': 'signed out of every session',
+  'auth.password_changed': 'changed their password',
+  'auth.password_reset_requested': 'asked for a password reset link',
+  'auth.password_reset': 'reset their password',
+  'member.added': 'added the member',
+  'member.role_changed': 'changed the role of',
+  'member.removed': 'removed the member',
+  'organization.updated': 'renamed the organization to',
+  'project.created': 'created the project',
+  'project.updated': 'changed the project',
+  'project.archived': 'archived the project',
+  'service.created': 'created the service',
+  'service.updated': 'changed the service',
+  'service.archived': 'archived the service',
 };
 
 /** "created the automation rule “Critical incident alert”". */
@@ -120,10 +140,12 @@ export function describeAudit(entry: Pick<AuditLogDto, 'action' | 'metadata'>): 
   const subject =
     typeof meta.name === 'string'
       ? meta.name
-      : typeof meta.repository === 'string'
-        ? meta.repository
-        : typeof meta.incidentNumber === 'number'
-          ? `INC-${meta.incidentNumber}`
-          : null;
+      : typeof meta.title === 'string'
+        ? meta.title
+        : typeof meta.repository === 'string'
+          ? meta.repository
+          : typeof meta.incidentNumber === 'number'
+            ? `INC-${meta.incidentNumber}`
+            : null;
   return subject ? `${verb} “${subject}”` : verb;
 }

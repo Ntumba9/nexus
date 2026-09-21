@@ -5,6 +5,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { apiEnvSchema, loadDotEnv, loadEnv } from '@nexus/config';
 import { AppModule } from './app.module';
+import { JsonLogger } from './common/json-logger';
 import { configureApp } from './app.setup';
 
 async function bootstrap(): Promise<void> {
@@ -14,11 +15,15 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true, // webhook signatures are computed over the exact bytes received
+    bufferLogs: true,
   });
+  app.useLogger(new JsonLogger(env.LOG_LEVEL));
   configureApp(app, env);
   app.enableShutdownHooks();
 
-  if (env.SWAGGER_ENABLED) {
+  // Interactive docs are a development tool: on unless switched off, and off in production unless
+  // switched on.
+  if (env.SWAGGER_ENABLED ?? env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('NEXUS API')
       .setDescription('Developer operations and incident intelligence platform')

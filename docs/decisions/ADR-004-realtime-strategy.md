@@ -20,6 +20,8 @@ Pick WebSockets or SSE.
 
 SSE, one stream per organisation, fan-out through Redis pub/sub so multiple API instances work. Events carry IDs and minimal data; clients invalidate TanStack Query caches and refetch (so authorization stays in the REST layer). Heartbeats every 15s.
 
+Built in Phase 7; see [ADR-014](ADR-014-realtime-implementation.md).
+
 ## Consequences
 
 No client→server channel (not needed; REST covers it). Must configure proxies not to buffer. Per-browser connection limit under HTTP/1.1 is avoided by one stream per tab.

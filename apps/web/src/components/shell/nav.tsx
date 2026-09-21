@@ -21,7 +21,7 @@ const NAV: NavItem[] = [
   { label: 'Projects', path: '/projects' },
   { label: 'Deployments', path: '/deployments' },
   { label: 'Automations', path: '/automations', permission: 'automation.manage' },
-  { label: 'Knowledge', soon: 'Phase 8' },
+  { label: 'Knowledge', path: '/knowledge', permission: 'knowledge.read' },
   { label: 'Integrations', path: '/integrations', permission: 'integrations.manage' },
   { label: 'Audit Log', path: '/audit-log', permission: 'audit.read' },
   { label: 'Settings', path: '/settings' },

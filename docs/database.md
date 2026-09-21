@@ -125,7 +125,7 @@ Every child references its parent through a composite foreign key `(organization
 
 `Organization.incidentCounter` is incremented with a single atomic `UPDATE` inside the incident-creation transaction. The row lock serialises concurrent creation, and a rollback also rolls the counter back, so numbers are gap-free and never reused. A test creates eight incidents concurrently and asserts `1..8`.
 
-Not yet implemented from the design above: knowledge, `AIInvestigation` and `ApiKey`.
+Not yet implemented from the design above: `AIInvestigation` and `ApiKey`.
 
 ---
 
@@ -174,3 +174,33 @@ Migrations `20260921100000_automation` and `20260921110000_notification_delivery
 - `IncidentEventType` gains `AUTOMATION_EXECUTED`.
 
 Retention: dispatched events (with their executions) and notifications are deleted after `AUTOMATION_RETENTION_DAYS` and `NOTIFICATION_RETENTION_DAYS`. Undispatched events and the audit log are never deleted by retention.
+
+---
+
+## Phase 8 as implemented
+
+Migration `20260922100000_knowledge_base`. Design and reasoning: [ADR-015](decisions/ADR-015-knowledge-base-and-retrieval.md).
+
+- **`KnowledgeDocument`**: `title`, `slug` (unique per organization, stable across renames), `contentMd`, `tags` (at most 10), `createdById` / `updatedById` (`SET NULL` if a user is ever removed). CHECKs bound the title (1 to 200 characters), the body (100 000) and the slug format.
+- **`KnowledgeChunk`**: `ordinal`, `heading` (the document title and the headings above the chunk), `content`, `contentHash` (SHA-256 of heading and text; unchanged chunks keep their vector when a document is edited), `embedding vector(384)`, `embeddingModel`, `embeddedAt`. **Composite foreign key `(organizationId, documentId)`** to the document, `ON DELETE CASCADE`: a chunk can only belong to a document of its own organization. A CHECK requires the vector and its model to be both present or both absent.
+- **Indexes Prisma cannot express**, all deliberately invisible to `prisma migrate dev` (it ignores expression and partial indexes; a plain HNSW index would be dropped by the next dev migration): a GIN expression index on `to_tsvector('english', heading || ' ' || content)` for keyword search, and a **partial** HNSW index (`vector_cosine_ops`, `WHERE embedding IS NOT NULL`) for meaning-based search. Queries repeat the same expression and predicate. `prisma migrate diff` against the migrated database reports no differences.
+- Vector search turns on `hnsw.iterative_scan = strict_order` per query (pgvector 0.8 or newer) so the organization filter cannot starve a small organization's results.
+
+---
+
+## Phase 9 as implemented
+
+Migration `20260923100000_ai_investigation`. Design and reasoning: [ADR-016](decisions/ADR-016-ai-investigation.md).
+
+- **`AiInvestigation`**: `status` (`QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`), `question`, `providerId` and `providerLabel` (kept even if configuration later changes), `context` (the exact sources the analysis saw, redacted and length-limited), `output` (the verified answer), the verification counts, `truncated`, a short `error`, `attempts` and timestamps. It references its incident through the composite tenant key `(organizationId, incidentId)`.
+- **A partial unique index allows one `QUEUED` or `RUNNING` investigation per incident** (Prisma ignores partial indexes, so `migrate dev` never drops it). CHECK constraints: a row has an `output` exactly when it `SUCCEEDED`; `finishedAt` is set exactly when it is over; a reason exists only on a failure and is at most 300 characters; the question is at most 500; counters are not negative.
+- `IncidentEventType` gains `AI_INVESTIGATED`.
+
+---
+
+## Phase 10 as implemented
+
+Migration `20260924100000_password_reset`. Design and reasoning: [ADR-017](decisions/ADR-017-security-hardening-and-observability.md).
+
+- **`PasswordReset`**: `userId` (cascades with the user), `tokenHash` (SHA-256, unique; the token itself is never stored), `expiresAt`, `usedAt`, the requesting `ip`. It belongs to a person, not an organization.
+- **Tenant isolation is checked against the live catalog** by a database integration test: every table either carries `organizationId` or is on a short reviewed list of exceptions (Organization, User, Session, PasswordReset, the migration table), every tenant table is anchored to an organization by a foreign key, and every foreign key between two tenant tables includes `organizationId`, so none can point across a tenant. Row Level Security remains deliberately off, with a documented rollout plan (ADR-017).

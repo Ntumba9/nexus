@@ -46,6 +46,65 @@ const databaseUrl = urlWithProtocol(['postgresql:', 'postgres:'], 'PostgreSQL');
 const redisUrl = urlWithProtocol(['redis:', 'rediss:'], 'Redis');
 const httpUrl = urlWithProtocol(['http:', 'https:'], 'HTTP(S)');
 
+/**
+ * Knowledge-base embeddings (Phase 8). `local` needs nothing and is the default. `openai` calls any
+ * OpenAI-compatible `/embeddings` endpoint (a local Ollama, or a free hosted tier) and needs a model
+ * that returns 384-dimension vectors. The api and the worker must use the same provider.
+ */
+const embeddingEnv = {
+  EMBEDDING_PROVIDER: z.enum(['local', 'openai']).default('local'),
+  EMBEDDING_API_URL: httpUrl.optional(),
+  EMBEDDING_MODEL: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  /** Secret. Read only from the environment; never logged or returned. */
+  EMBEDDING_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+};
+
+/**
+ * AI investigation (Phase 9). `rules` (the default) is the built-in rule-based analysis: free, offline,
+ * no key. `openai` calls any OpenAI-compatible `/chat/completions` endpoint: a local Ollama, or a free
+ * hosted tier (Groq, Google Gemini's OpenAI endpoint, OpenRouter). `none` turns the feature off.
+ * The api and the worker must agree.
+ */
+const aiEnv = {
+  AI_PROVIDER: z.enum(['rules', 'openai', 'none']).default('rules'),
+  AI_API_URL: httpUrl.optional(),
+  AI_MODEL: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  /** Optional name shown next to the model, for example "Ollama" or "Groq". */
+  AI_VENDOR: z
+    .string()
+    .max(40)
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+  /** Secret. Read only from the environment; never logged, stored or returned. */
+  AI_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined),
+};
+
+/**
+ * Enables `GET /metrics` (Prometheus text) behind `Authorization: Bearer <token>`. Unset means the
+ * endpoint does not exist. At least 16 characters so it cannot be a guessable word.
+ */
+const metricsEnv = {
+  METRICS_TOKEN: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || undefined)
+    .refine((value) => value === undefined || (value.length >= 16 && value.length <= 200), {
+      message: 'must be 16 to 200 characters (generate with: openssl rand -hex 24)',
+    }),
+};
+
 export const apiEnvSchema = z.object({
   ...baseEnv,
   DATABASE_URL: databaseUrl,
@@ -54,10 +113,16 @@ export const apiEnvSchema = z.object({
   API_PORT: port.default(3001),
   /** Browser origin allowed by CORS. */
   WEB_ORIGIN: httpUrl.default('http://localhost:3000'),
+  /** Interactive API docs. Unset means: on in development and test, OFF in production. */
   SWAGGER_ENABLED: z
     .enum(['true', 'false'])
-    .default('true')
-    .transform((value) => value === 'true'),
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
+  /**
+   * A generous ceiling on requests per client IP per minute across the whole API, so one client
+   * cannot hold the server busy. The credential endpoints have far stricter limits of their own.
+   */
+  API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(60).max(1_000_000).default(1200),
   /** Number of reverse-proxy hops to trust for client IP (X-Forwarded-For). 0 = trust none. */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
   /** Set the Secure flag on the session cookie. Defaults to true in production. */
@@ -76,6 +141,14 @@ export const apiEnvSchema = z.object({
   AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(86400).default(900),
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,
   INTEGRATION_ENCRYPTION_KEY: encryptionKey,
+  ...embeddingEnv,
+  ...aiEnv,
+  ...metricsEnv,
+  /**
+   * How often an open real-time stream sends a keep-alive and re-checks that its member and session
+   * are still valid. Keep it below any proxy's idle timeout (nginx defaults to 60 s).
+   */
+  REALTIME_HEARTBEAT_MS: z.coerce.number().int().min(100).max(55_000).default(15_000),
   /**
    * Optional: AI features are disabled when unset (the rest of the product must keep working).
    * Read only from the environment; never logged, never sent to the browser.
@@ -89,6 +162,9 @@ export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
 export const workerEnvSchema = z.object({
   ...baseEnv,
+  ...embeddingEnv,
+  ...aiEnv,
+  ...metricsEnv,
   DATABASE_URL: databaseUrl,
   REDIS_URL: redisUrl,
   MONITORING_ALLOW_PRIVATE_NETWORKS: monitoringPrivateNetworks,

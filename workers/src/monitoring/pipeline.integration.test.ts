@@ -117,7 +117,7 @@ describe.skipIf(!HAS_DB_AND_REDIS)('monitoring pipeline (integration)', () => {
       targetStatus = 200;
       await prisma.monitoringCheck.update({
         where: { id: seeded.checkId },
-        data: { nextRunAt: new Date() },
+        data: { nextRunAt: new Date(Date.now() - 5_000) }, // past: the database clock may lag ours
       });
       expect(await dispatchDueChecks(prisma, queue, logger, 100, seeded.organizationId)).toBe(1);
 

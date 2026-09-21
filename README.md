@@ -2,17 +2,17 @@
 
 **Developer operations and incident intelligence platform.**
 
-> **Status: Phase 6 complete (automation and notifications).** Accounts, organizations, RBAC, projects, services,
+> **Status: Phase 12 complete (production packaging and demo).** Accounts, organizations, RBAC, projects, services,
 > incident management, the dashboard, HTTP monitoring, GitHub deployments linked to incidents, and a
-> rule-based automation and notification system with an audit log are built and tested in CI (unit, API
-> and worker integration against real PostgreSQL and Redis, and Playwright end-to-end). Real-time
-> updates, the knowledge base and AI are **not built yet**; see the [roadmap](#roadmap). Sections describing those features are the target design.
+> rule-based automation and notification system with an audit log, and live updates over Server-Sent Events
+> are built and tested in CI (unit, API and worker integration against real PostgreSQL and Redis, and
+> Playwright end-to-end). Production deployment is documented and was verified end to end; see [docs/deployment.md](docs/deployment.md) and the [roadmap](#roadmap).
 
 ## What it is
 
 NEXUS is a multi-tenant platform where teams register services, monitor them, detect and manage
 incidents, connect GitHub, automate responses, keep an internal knowledge base, and use AI
-(Anthropic) as an evidence-citing investigation assistant.
+as an evidence-citing investigation assistant that runs free, on a local or free-tier model or on a built-in rule engine.
 
 ```text
 Service → Monitoring → Detection → Incident → Investigation → Automation → Resolution → Record
@@ -37,6 +37,10 @@ useful when the AI provider is unavailable.
 - Automation: rules made of a trigger, conditions and typed actions (notify people in-app or by email, call a signed webhook, open an incident), with templates to start from. Events are written in the same transaction as the change that caused them, matched by workers exactly once, and every run is recorded with each action's result. Cooldowns, an hourly cap and a no-chains rule keep it from running away
 - Notifications: a bell and inbox where everyone sees only their own; email through a `log` or SMTP transport
 - Audit log: append-only in the database, written with the change it describes and redacted first; covers automation, outbound webhooks and integrations
+- Knowledge base: Markdown runbooks and how-tos per organization, split into heading-aware chunks and searched two ways at once, by keyword and by meaning, fused into one ranking that says where in a document it matched and how. Works with no account, key or download (a built-in local embedder); an optional OpenAI-compatible endpoint (a local Ollama or a free tier) gives real semantic search. Relevant runbooks are suggested on each incident. Rendered safely (no HTML), tenant-isolated in the database and in every query, and it keeps working on keyword search if embeddings are unavailable
+- Investigation: one click on an incident reads its timeline, recent deployments, health checks, earlier incidents and matching runbooks, and returns a summary, possible causes, evidence and suggestions, each citing the sources it used (open a citation to read the exact text). It works out of the box on a built-in rule engine that is labelled as not being an AI model, or on any OpenAI-compatible model (a local Ollama, or a free tier such as Groq, Gemini or OpenRouter). Whatever answers, its output is treated as untrusted: it must match a strict schema, every citation is checked against the sources really provided (invented ones are removed and unsupported claims are shown as inference), secrets are redacted before anything is stored or sent, and nothing it suggests is ever executed
+- Security hardening: a strict per-request Content-Security-Policy (nonce, no inline script) and HSTS on the web app, a locked-down API, sign out everywhere, change password and email-based password reset (single-use hashed tokens, identical answer for any address), audit entries for members, roles, settings, projects, services and sign-ins, structured JSON logs whose request id follows a request into the workers, Prometheus metrics behind a token, a CI dependency audit, and a test that reads the live database schema to catch any change that weakens tenant isolation. Row Level Security, MFA and OpenTelemetry were deliberately left out, with reasons, in [ADR-017](docs/decisions/ADR-017-security-hardening-and-observability.md)
+- Real-time updates: one Server-Sent Events stream per browser tab, fed through Redis pub/sub so several API instances and the workers all reach it. Messages are signals with no record data (the browser refetches through the normal, authorized API), only reach members allowed to read that topic, and end as soon as the member is removed or signs out. Polling stays as a slow fallback, and a Live/Polling indicator shows which mode you are in
 - Overview dashboard built from real data: active incidents by severity, service health (real once checks exist; "not monitored" otherwise), 14-day trend, recent incidents and activity
 - Authenticated web app shell (dark UI): login, register, onboarding, dashboard, projects, services, incidents, settings and members, with loading, error and empty states
 - Tenant isolation enforced by the database as well as the application (composite foreign keys), proven by cross-tenant tests that bypass the API with raw SQL
@@ -69,8 +73,8 @@ Details: [docs/architecture.md](docs/architecture.md). Decisions: [docs/decision
 
 TypeScript (strict) · Next.js · NestJS · PostgreSQL + pgvector · Prisma · Redis · BullMQ · Zod ·
 Tailwind CSS · TanStack Query · React Hook Form · Argon2id · Vitest · Supertest · Playwright ·
-ESLint · Prettier · Docker Compose · GitHub Actions. Later phases add OpenTelemetry and the
-Anthropic SDK — each dependency is added when a feature first needs it.
+ESLint · Prettier · Docker Compose · GitHub Actions. Later phases add the
+the AI providers speak plain HTTP, so there is no vendor SDK — each dependency is added when a feature first needs it.
 
 ## Local development
 
@@ -158,29 +162,34 @@ version, or `NEXUS_IMAGE_REGISTRY` to use a fork. If the packages are private,
 All variables are validated at startup by `packages/config`; a missing or invalid value stops the
 process with a message naming the variable (never its value). See [.env.example](.env.example).
 
-| Variable                                                                         | Used by      | Notes                                                                                                                                                      |
-| -------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                                                   | api          | `postgresql://…`                                                                                                                                           |
-| `REDIS_URL`                                                                      | api, workers | `redis://…`                                                                                                                                                |
-| `API_HOST`, `API_PORT`                                                           | api          | default `0.0.0.0:3001`                                                                                                                                     |
-| `WEB_ORIGIN`                                                                     | api          | must equal the URL you browse (default `http://localhost:3000`); used for CORS and the CSRF Origin check                                                   |
-| `SWAGGER_ENABLED`                                                                | api          | `true`/`false`                                                                                                                                             |
-| `TRUST_PROXY_HOPS`                                                               | api          | reverse-proxy hops to trust for client IP (0)                                                                                                              |
-| `MONITORING_ALLOW_PRIVATE_NETWORKS`                                              | api, workers | `false` (default) refuses checks against localhost/private/metadata addresses; `true` is an operator opt-in (dev, self-hosting). Keep both processes equal |
-| `MONITORING_DISPATCH_INTERVAL_MS`, `MONITORING_RESULT_RETENTION_DAYS`            | workers      | defaults `5000` ms and `30` days                                                                                                                           |
-| `INTEGRATION_ENCRYPTION_KEY`                                                     | api, workers | base64 of 32 random bytes (`openssl rand -base64 32`). Integrations are disabled while unset. Losing it makes existing integrations unusable               |
-| `WEBHOOK_RETENTION_DAYS`                                                         | workers      | stored webhook deliveries are deleted after this many days (default `30`); deployments are kept                                                            |
-| `EMAIL_TRANSPORT`, `SMTP_URL`, `EMAIL_FROM`                                      | workers      | `log` (default) writes emails to the worker log; `smtp` sends them and needs `SMTP_URL` (`smtp://user:pass@host:587`, a secret)                            |
-| `AUTOMATION_DISPATCH_INTERVAL_MS`, `AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR` | workers      | how often events are matched to rules (default `1000` ms) and the per-rule hourly cap (default `60`)                                                       |
-| `AUTOMATION_RETENTION_DAYS`, `NOTIFICATION_RETENTION_DAYS`                       | workers      | dispatched events with their runs, and notifications, are deleted after this many days (default `90`)                                                      |
-| `WEB_ORIGIN`                                                                     | workers too  | emails link back to it (default `http://localhost:3000`)                                                                                                   |
-| `COOKIE_SECURE`                                                                  | api          | session cookie `Secure`; default: production                                                                                                               |
-| `SESSION_IDLE_TTL_HOURS`, `SESSION_ABSOLUTE_TTL_DAYS`                            | api          | defaults `168` hours, `30` days                                                                                                                            |
-| `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`                          | api          | defaults `10` per `900` s per account                                                                                                                      |
-| `API_INTERNAL_URL`                                                               | web          | server-side URL of the API                                                                                                                                 |
-| `WORKER_CONCURRENCY`, `WORKER_HEALTH_HOST/_PORT`                                 | workers      | defaults `5`, `0.0.0.0:3002`                                                                                                                               |
-| `NODE_ENV`, `LOG_LEVEL`                                                          | all          |                                                                                                                                                            |
-| `POSTGRES_PASSWORD`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`                     | compose      | Docker only                                                                                                                                                |
+| Variable                                                                          | Used by      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                                    | api          | `postgresql://…`                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `REDIS_URL`                                                                       | api, workers | `redis://…`                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `API_HOST`, `API_PORT`                                                            | api          | default `0.0.0.0:3001`                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `WEB_ORIGIN`                                                                      | api          | must equal the URL you browse (default `http://localhost:3000`); used for CORS and the CSRF Origin check                                                                                                                                                                                                                                                                                                                            |
+| `SWAGGER_ENABLED`                                                                 | api          | `true`/`false`                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `TRUST_PROXY_HOPS`                                                                | api          | reverse-proxy hops to trust for client IP (0)                                                                                                                                                                                                                                                                                                                                                                                       |
+| `MONITORING_ALLOW_PRIVATE_NETWORKS`                                               | api, workers | `false` (default) refuses checks against localhost/private/metadata addresses; `true` is an operator opt-in (dev, self-hosting). Keep both processes equal                                                                                                                                                                                                                                                                          |
+| `MONITORING_DISPATCH_INTERVAL_MS`, `MONITORING_RESULT_RETENTION_DAYS`             | workers      | defaults `5000` ms and `30` days                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `INTEGRATION_ENCRYPTION_KEY`                                                      | api, workers | base64 of 32 random bytes (`openssl rand -base64 32`). Integrations are disabled while unset. Losing it makes existing integrations unusable                                                                                                                                                                                                                                                                                        |
+| `WEBHOOK_RETENTION_DAYS`                                                          | workers      | stored webhook deliveries are deleted after this many days (default `30`); deployments are kept                                                                                                                                                                                                                                                                                                                                     |
+| `EMAIL_TRANSPORT`, `SMTP_URL`, `EMAIL_FROM`                                       | workers      | `log` (default) writes emails to the worker log; `smtp` sends them and needs `SMTP_URL` (`smtp://user:pass@host:587`, a secret)                                                                                                                                                                                                                                                                                                     |
+| `AUTOMATION_DISPATCH_INTERVAL_MS`, `AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR`  | workers      | how often events are matched to rules (default `1000` ms) and the per-rule hourly cap (default `60`)                                                                                                                                                                                                                                                                                                                                |
+| `EMBEDDING_PROVIDER`, `EMBEDDING_API_URL`, `EMBEDDING_MODEL`, `EMBEDDING_API_KEY` | api, workers | `local` (default) needs nothing. `openai` calls any OpenAI-compatible `/embeddings` endpoint (for example Ollama at `http://localhost:11434/v1` with `all-minilm`) and needs a **384-dimension** model. The api and workers must match. `EMBEDDING_API_KEY` is a secret                                                                                                                                                             |
+| `AI_PROVIDER`, `AI_API_URL`, `AI_MODEL`, `AI_VENDOR`, `AI_API_KEY`                | api, workers | `rules` (default) is the built-in rule-based analysis: free, offline, no key. `openai` calls any OpenAI-compatible `/chat/completions` endpoint (Ollama at `http://localhost:11434/v1`; Groq `https://api.groq.com/openai/v1`; Gemini `https://generativelanguage.googleapis.com/v1beta/openai`; OpenRouter `https://openrouter.ai/api/v1`). `none` turns the feature off. The api and workers must match. `AI_API_KEY` is a secret |
+| `METRICS_TOKEN`                                                                   | api, workers | 16 to 200 characters (`openssl rand -hex 24`). Enables `GET /metrics` (Prometheus text) behind `Authorization: Bearer <token>`; unset means the endpoint does not exist                                                                                                                                                                                                                                                             |
+| `API_RATE_LIMIT_PER_MINUTE`                                                       | api          | requests per client IP per minute across the whole API (default `1200`); 429 with `Retry-After` above it                                                                                                                                                                                                                                                                                                                            |
+| `REALTIME_HEARTBEAT_MS`                                                           | api          | keep-alive and access re-check interval of each open real-time stream (default `15000`). Keep it below your reverse proxy's idle timeout (nginx: 60 s)                                                                                                                                                                                                                                                                              |
+| `AUTOMATION_RETENTION_DAYS`, `NOTIFICATION_RETENTION_DAYS`                        | workers      | dispatched events with their runs, and notifications, are deleted after this many days (default `90`)                                                                                                                                                                                                                                                                                                                               |
+| `WEB_ORIGIN`                                                                      | workers too  | emails link back to it (default `http://localhost:3000`)                                                                                                                                                                                                                                                                                                                                                                            |
+| `COOKIE_SECURE`                                                                   | api          | session cookie `Secure`; default: production                                                                                                                                                                                                                                                                                                                                                                                        |
+| `SESSION_IDLE_TTL_HOURS`, `SESSION_ABSOLUTE_TTL_DAYS`                             | api          | defaults `168` hours, `30` days                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_SECONDS`                           | api          | defaults `10` per `900` s per account                                                                                                                                                                                                                                                                                                                                                                                               |
+| `API_INTERNAL_URL`                                                                | web          | server-side URL of the API                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `WORKER_CONCURRENCY`, `WORKER_HEALTH_HOST/_PORT`                                  | workers      | defaults `5`, `0.0.0.0:3002`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `NODE_ENV`, `LOG_LEVEL`                                                           | all          |                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `POSTGRES_PASSWORD`, `POSTGRES_HOST_PORT`, `REDIS_HOST_PORT`                      | compose      | Docker only                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 In production `.env` is never loaded; configuration must come from the real environment.
 
@@ -205,52 +214,87 @@ pnpm typecheck
 pnpm test                    # unit tests, no infrastructure needed
 pnpm build
 pnpm test:integration        # needs PostgreSQL + Redis (pnpm dev:infra, migrations applied)
+pnpm test:coverage           # every test, with coverage; fails below each package's floor (what CI runs)
 pnpm test:e2e                # Playwright; builds, then starts API + web (needs the same services;
                              # first run: pnpm --filter @nexus/e2e exec playwright install chromium)
 ```
 
 Integration tests skip themselves when `DATABASE_URL` / `REDIS_URL` are not set.
 
+Run integration tests away from a running development stack: its worker would pick up the tests' jobs,
+and a stopped stack leaves a backlog for them to wait behind. Use a separate Redis database
+(`REDIS_URL=redis://localhost:6379/1`) and stop the `api`, `worker` and `web` containers. What is
+tested at which level, the coverage floors and the known gaps are in
+[ADR-018](docs/decisions/ADR-018-testing-strategy.md).
+
 ## Deployment
 
-Production Docker configuration is a Phase 12 deliverable. The current Dockerfiles are written but
-not yet built or size-optimised (Docker was unavailable); migrations are an explicit step (`migrate` service), never
-run on API start.
+A production deployment is Docker Compose plus an overlay that puts Caddy in front for HTTPS and
+publishes nothing else:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d
+```
+
+It needs `POSTGRES_PASSWORD`, `WEB_ORIGIN` (the public `https://` URL) and `SITE_ADDRESS` (the host
+name) in `.env`, and refuses to start without them. Migrations are an explicit one-shot step (the
+`migrate` service), never run on API start. The full guide, covering first deployment, upgrades,
+backup and restore, monitoring and troubleshooting, is [docs/deployment.md](docs/deployment.md); what
+was verified and what was not is in [ADR-019](docs/decisions/ADR-019-production-packaging-and-demo.md).
+The images are large (about 1.2 GB each); the reason is recorded there too.
+
+## Try it with demo data
+
+With the stack running locally (`docker compose --profile app up -d`):
+
+```bash
+pnpm demo
+```
+
+This creates a sample organization through the public API (four accounts, a project with services,
+three runbooks, two automation rules and four incidents at different stages) and prints the login
+(`dana@demo.example.com`, password `demo-passphrase-2026`). It uses accounts with a known password,
+so it refuses to run against anything but localhost. It is safe to repeat.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md) (threat model). Phase 1
-security posture: validated config, Helmet headers, CORS restricted to `WEB_ORIGIN`, no secrets in
-the repo, coarse client-facing health errors with detail only in server logs. Authentication,
-authorization and tenant isolation are Phase 2+.
+See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md) (the threat model, with what is
+implemented and what is deliberately not). In short: validated configuration, Argon2id passwords and
+revocable hashed sessions, a default-deny permission matrix, tenant isolation enforced in the
+database as well as the application, SSRF-safe monitoring and webhooks, signed and deduplicated
+inbound webhooks, secrets encrypted at rest, a strict per-request CSP, an append-only audit log, and
+rate limits. Not done, on purpose and with reasons: MFA, email verification and Row Level Security
+([ADR-017](docs/decisions/ADR-017-security-hardening-and-observability.md)).
 
-## AI architecture
+## AI
 
-Design only so far: [docs/ai.md](docs/ai.md). Embeddings will sit behind a provider interface with a
-local development fallback; no paid embedding provider is configured.
+Investigation answers are cited and verified against the incident's own evidence, and work with no
+account or key on a built-in rule engine; an OpenAI-compatible endpoint (a local Ollama or a free
+tier) is optional. Semantic search in the knowledge base works the same way. Design and limits:
+[docs/ai.md](docs/ai.md), [ADR-016](docs/decisions/ADR-016-ai-investigation.md).
 
 ## Documentation
 
 [architecture](docs/architecture.md) · [database](docs/database.md) · [security](docs/security.md) ·
-[api](docs/api.md) · [ai](docs/ai.md) · [decisions](docs/decisions/)
+[api](docs/api.md) · [ai](docs/ai.md) · [deployment](docs/deployment.md) · [decisions](docs/decisions/)
 
 ## Roadmap
 
-| Phase | Scope                                         | Status  |
-| ----- | --------------------------------------------- | ------- |
-| 0     | Architecture and design docs                  | Done    |
-| 1     | Monorepo, Next.js, NestJS, Prisma, Docker, CI | Done    |
-| 2     | Auth, organisations, RBAC                     | Done    |
-| 3     | Projects, services, incidents, dashboard      | Done    |
-| 4     | Monitoring and workers                        | Done    |
-| 5     | GitHub integration                            | Done    |
-| 6     | Automation and notifications                  | Done    |
-| 7     | Real-time                                     | Next    |
-| 8     | Knowledge base and RAG                        | Planned |
-| 9     | AI investigation                              | Planned |
-| 10    | Security hardening and observability          | Planned |
-| 11    | Comprehensive testing                         | Planned |
-| 12    | Production polish and demo                    | Planned |
+| Phase | Scope                                         | Status |
+| ----- | --------------------------------------------- | ------ |
+| 0     | Architecture and design docs                  | Done   |
+| 1     | Monorepo, Next.js, NestJS, Prisma, Docker, CI | Done   |
+| 2     | Auth, organisations, RBAC                     | Done   |
+| 3     | Projects, services, incidents, dashboard      | Done   |
+| 4     | Monitoring and workers                        | Done   |
+| 5     | GitHub integration                            | Done   |
+| 6     | Automation and notifications                  | Done   |
+| 7     | Real-time                                     | Done   |
+| 8     | Knowledge base and RAG                        | Done   |
+| 9     | AI investigation                              | Done   |
+| 10    | Security hardening and observability          | Done   |
+| 11    | Comprehensive testing                         | Done   |
+| 12    | Production polish and demo                    | Done   |
 
 ## License
 

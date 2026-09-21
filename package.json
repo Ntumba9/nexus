@@ -17,17 +17,20 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm --filter \"./packages/*\" build && pnpm -r --if-present test",
+    "test:coverage": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present test:coverage",
     "test:integration": "pnpm --filter \"./packages/*\" build && pnpm -r --workspace-concurrency=1 --if-present test:integration",
     "db:generate": "pnpm --filter @nexus/database generate",
     "db:migrate:dev": "pnpm --filter @nexus/database migrate:dev",
     "db:migrate:deploy": "pnpm --filter @nexus/database migrate:deploy",
     "clean": "pnpm -r exec node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "env:check": "pnpm --filter @nexus/config build && node scripts/check-env.mjs",
+    "demo": "pnpm --filter @nexus/shared build && node scripts/demo.mjs",
     "test:e2e": "pnpm --filter \"./packages/*\" build && pnpm build && pnpm --filter @nexus/e2e e2e"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@next/eslint-plugin-next": "16.3.5",
+    "@vitest/coverage-v8": "3.2.7",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react-hooks": "7.1.1",
@@ -35,5 +38,11 @@
     "prettier": "3.9.8",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "multer": "^2.3.0",
+      "deepmerge-ts": "^8.0.0"
+    }
   }
 }

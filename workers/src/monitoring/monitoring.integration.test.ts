@@ -474,9 +474,11 @@ describe.skipIf(!HAS_DB)('monitoring (integration)', () => {
     it('"run now" (nextRunAt = now) is picked up on the next tick', async () => {
       const service = await seedService(prisma);
       const check = await seedCheck(prisma, service, { nextRunAt: future() });
+      // A moment in the past, not `new Date()`: the dispatcher compares against the database clock,
+      // which runs in a container and can be a few milliseconds behind this process.
       await prisma.monitoringCheck.update({
         where: { id: check.checkId },
-        data: { nextRunAt: new Date() },
+        data: { nextRunAt: new Date(Date.now() - 5_000) },
       });
       const queue = new RecordingQueue();
       await dispatchDueChecks(prisma, queue, logger, 100, service.organizationId);

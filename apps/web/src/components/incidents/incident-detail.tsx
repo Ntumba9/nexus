@@ -21,7 +21,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { ApiError, apiFetch, describeError } from '@/lib/api-client';
 import { actionLabel, describeEvent, formatDateTime, timeAgo } from '@/lib/incident-format';
 import { fetchers, keys } from '@/lib/queries';
+import { pollEvery } from '@/lib/realtime';
+import { AiInvestigation } from '@/components/incidents/ai-investigation';
 import { IncidentDeployments } from '@/components/incidents/incident-deployments';
+import { RelatedRunbooks } from '@/components/incidents/related-runbooks';
 
 export function IncidentDetail({
   orgId,
@@ -38,12 +41,12 @@ export function IncidentDetail({
   const incident = useQuery({
     queryKey: keys.incident(orgId, incidentId),
     queryFn: () => fetchers.incident(orgId, incidentId),
-    refetchInterval: 15_000, // live updates arrive in a later phase
+    refetchInterval: pollEvery(15_000),
   });
   const events = useQuery({
     queryKey: keys.events(orgId, incidentId),
     queryFn: () => fetchers.events(orgId, incidentId),
-    refetchInterval: 15_000,
+    refetchInterval: pollEvery(15_000),
   });
 
   const refresh = () =>
@@ -134,6 +137,8 @@ export function IncidentDetail({
             )}
           </Card>
 
+          <AiInvestigation orgId={orgId} incidentId={incidentId} canRun={canUpdate} />
+
           <Card
             title="Deployments"
             description="Changes shipped to this service shortly before the incident began."
@@ -170,6 +175,11 @@ export function IncidentDetail({
           <Card title="Assignees">
             <Assignees orgId={orgId} incident={data} canUpdate={canUpdate} onChanged={refresh} />
           </Card>
+          <RelatedRunbooks
+            orgId={orgId}
+            incidentId={incidentId}
+            canWrite={roleHasPermission(role, 'knowledge.manage')}
+          />
         </aside>
       </div>
     </div>

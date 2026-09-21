@@ -2,11 +2,17 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res } from '@nestjs
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { ApiEnv } from '@nexus/config';
 import {
+  changePasswordSchema,
+  forgotPasswordSchema,
   loginSchema,
   registerSchema,
+  resetPasswordSchema,
+  type ChangePasswordInput,
+  type ForgotPasswordInput,
   type LoginInput,
   type MeResponse,
   type RegisterInput,
+  type ResetPasswordInput,
 } from '@nexus/shared';
 import type { Response } from 'express';
 import { ApiError } from '../common/api-error';
@@ -78,7 +84,61 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     const token = readCookie(request.headers.cookie, SESSION_COOKIE);
-    if (token) await this.auth.logout(token);
+    if (token) await this.auth.logout(token, request.auth?.user);
+    clearSessionCookie(response, this.secureCookie);
+  }
+
+  @AuthenticatedOnly()
+  @Post('logout-all')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Revoke every session of the current user, on every device' })
+  async logoutAll(
+    @Req() request: AppRequest,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    if (!request.auth) throw ApiError.unauthenticated();
+    await this.auth.logoutAll(request.auth.user);
+    clearSessionCookie(response, this.secureCookie);
+  }
+
+  @AuthenticatedOnly()
+  @Post('change-password')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Change your password (ends your other sessions)' })
+  async changePassword(
+    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
+    @Req() request: AppRequest,
+  ): Promise<void> {
+    if (!request.auth) throw ApiError.unauthenticated();
+    await this.limits.beforeChangePassword(request.auth.user.id);
+    await this.auth.changePassword(request.auth.user, request.auth.sessionId, body);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(202)
+  @ApiOperation({ summary: 'Email a password-reset link (answers the same for any address)' })
+  async forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput,
+    @Req() request: AppRequest,
+  ): Promise<{ accepted: true }> {
+    await this.limits.beforeForgotPassword(request.ip, body.email);
+    await this.auth.requestPasswordReset(body.email, request.ip ?? null);
+    return { accepted: true };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Set a new password with a reset link' })
+  async resetPassword(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput,
+    @Req() request: AppRequest,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    await this.limits.beforeResetPassword(request.ip);
+    await this.auth.resetPassword(body.token, body.password);
+    // Every session was ended, this browser's included.
     clearSessionCookie(response, this.secureCookie);
   }
 

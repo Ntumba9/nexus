@@ -48,6 +48,13 @@ describe('describeEvent', () => {
     expect(describeEvent({ type: 'MONITORING_SIGNAL', data: {} })).toContain('monitoring change');
   });
 
+  it('describes an investigation on an incident', () => {
+    expect(
+      describeEvent({ type: 'AI_INVESTIGATED', data: { provider: 'llama3.1 (Ollama)' } }),
+    ).toBe('ran an investigation (llama3.1 (Ollama))');
+    expect(describeEvent({ type: 'AI_INVESTIGATED', data: {} })).toBe('ran an investigation');
+  });
+
   it('describes an automation run on an incident', () => {
     const run = (status: string) =>
       describeEvent({

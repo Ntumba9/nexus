@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --exclude \"**/*.integration.test.ts\" --exclude \"**/node_modules/**\" --passWithNoTests",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary",
     "test:integration": "vitest run integration"
   },
   "dependencies": {

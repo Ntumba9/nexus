@@ -19,6 +19,8 @@ export const PERMISSIONS = [
   'integrations.manage',
   'automation.manage',
   'audit.read',
+  'knowledge.read',
+  'knowledge.manage',
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -27,6 +29,7 @@ const VIEWER_PERMISSIONS: readonly Permission[] = [
   'users.read',
   'projects.read',
   'incidents.read',
+  'knowledge.read',
 ];
 
 const SUPPORT_PERMISSIONS: readonly Permission[] = [
@@ -40,6 +43,7 @@ const DEVELOPER_PERMISSIONS: readonly Permission[] = [
   'incidents.resolve',
   'projects.manage',
   'services.manage',
+  'knowledge.manage',
 ];
 
 const ADMIN_PERMISSIONS: readonly Permission[] = PERMISSIONS;

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AiModule } from './ai/ai.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { AutomationModule } from './automation/automation.module';
@@ -6,9 +7,12 @@ import { GitHubModule } from './github/github.module';
 import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
+import { ObservabilityModule } from './observability/observability.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { ProjectsModule } from './projects/projects.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -20,7 +24,11 @@ import { ProjectsModule } from './projects/projects.module';
     MonitoringModule,
     GitHubModule,
     AutomationModule,
+    KnowledgeModule,
+    AiModule,
     AuditModule,
+    RealtimeModule,
+    ObservabilityModule,
     HealthModule,
   ],
 })

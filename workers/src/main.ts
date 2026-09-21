@@ -1,5 +1,10 @@
 import { loadDotEnv, loadEnv, workerEnvSchema } from '@nexus/config';
-import { createPrismaClient, pingDatabase } from '@nexus/database';
+import {
+  createAnalysisProvider,
+  createEmbeddingProvider,
+  createPrismaClient,
+  pingDatabase,
+} from '@nexus/database';
 import { MAINTENANCE_JOBS, QUEUE_NAMES } from '@nexus/shared';
 import { parseEncryptionKey } from '@nexus/shared/webhook-security';
 import { Queue } from 'bullmq';
@@ -12,6 +17,9 @@ import { createActionHandlers } from './automation/actions/handlers';
 import { startAutomationDispatcher } from './automation/dispatcher';
 import { createLogEmailSender } from './automation/email';
 import { createSafePoster } from './automation/safe-post';
+import { investigationWorker } from './ai/investigate';
+import { emailWorker } from './email/password-reset';
+import { knowledgeWorker, startEmbeddingSweep } from './knowledge/embed';
 import { createSmtpEmailSender, createSmtpTransporter } from './automation/smtp';
 import {
   automationWorker,
@@ -20,7 +28,8 @@ import {
   webhookWorker,
 } from './processors/monitoring';
 import { systemWorker } from './processors/system';
-import { createBullConnection } from './redis';
+import { registry } from './metrics';
+import { createBullConnection, createPublisherConnection } from './redis';
 
 const HOUR_MS = 3_600_000;
 
@@ -32,6 +41,9 @@ async function main(): Promise<void> {
   const prisma = createPrismaClient(env.DATABASE_URL);
   const connection = createBullConnection(env.REDIS_URL);
   connection.on('error', (error) => logger.error('redis error', { error: error.message }));
+  // Real-time signals to browsers (ADR-014); best-effort, so it has its own fail-fast connection.
+  const realtime = createPublisherConnection(env.REDIS_URL);
+  realtime.on('error', (error) => logger.warn('realtime redis error', { error: error.message }));
 
   // Email: `log` needs nothing; `smtp` needs a URL. Fail at startup, not at the first notification.
   if (env.EMAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
@@ -60,11 +72,31 @@ async function main(): Promise<void> {
     );
   }
 
+  // Embeddings for the knowledge base. An incomplete EMBEDDING_* configuration fails here, at startup.
+  const embeddings = createEmbeddingProvider({
+    provider: env.EMBEDDING_PROVIDER,
+    apiUrl: env.EMBEDDING_API_URL,
+    apiKey: env.EMBEDDING_API_KEY,
+    model: env.EMBEDDING_MODEL,
+  });
+  logger.info('embedding provider', { provider: embeddings.id });
+  const knowledgeDeps = { prisma, provider: embeddings, logger, realtime };
+
+  // AI investigation. `none` disables it; an incomplete AI_* configuration fails here, at startup.
+  const analysis = createAnalysisProvider({
+    provider: env.AI_PROVIDER,
+    apiUrl: env.AI_API_URL,
+    apiKey: env.AI_API_KEY,
+    model: env.AI_MODEL,
+    vendor: env.AI_VENDOR,
+  });
+  logger.info('ai provider', { provider: analysis?.id ?? 'none' });
+
   // One worker per queue; add new queues here as later phases introduce them.
   const workers = [
     createWorker(systemWorker(env.WORKER_CONCURRENCY), connection, logger),
     createWorker(
-      healthCheckWorker({ prisma, check, logger }, env.WORKER_CONCURRENCY),
+      healthCheckWorker({ prisma, check, logger, realtime }, env.WORKER_CONCURRENCY),
       connection,
       logger,
     ),
@@ -80,10 +112,43 @@ async function main(): Promise<void> {
       connection,
       logger,
     ),
-    createWorker(webhookWorker({ prisma, logger }, env.WORKER_CONCURRENCY), connection, logger),
+    createWorker(knowledgeWorker(knowledgeDeps, env.WORKER_CONCURRENCY), connection, logger),
+    createWorker(
+      emailWorker(
+        {
+          prisma,
+          email,
+          logger,
+          webOrigin: env.WEB_ORIGIN,
+          // Only ever in development, and only when nothing is really sent.
+          revealLinkInLogs: env.EMAIL_TRANSPORT === 'log' && env.NODE_ENV !== 'production',
+        },
+        2,
+      ),
+      connection,
+      logger,
+    ),
+    // Only when enabled: with AI_PROVIDER=none nothing consumes (or accepts) investigation jobs.
+    ...(analysis
+      ? [
+          createWorker(
+            investigationWorker(
+              { prisma, provider: analysis, embeddings, logger, realtime },
+              Math.min(env.WORKER_CONCURRENCY, 2),
+            ),
+            connection,
+            logger,
+          ),
+        ]
+      : []),
+    createWorker(
+      webhookWorker({ prisma, logger, realtime }, env.WORKER_CONCURRENCY),
+      connection,
+      logger,
+    ),
     createWorker(
       automationWorker(
-        { prisma, logger, email, webOrigin: env.WEB_ORIGIN, handlers },
+        { prisma, logger, email, webOrigin: env.WEB_ORIGIN, handlers, realtime },
         env.WORKER_CONCURRENCY,
       ),
       connection,
@@ -110,7 +175,11 @@ async function main(): Promise<void> {
     logger,
     intervalMs: env.AUTOMATION_DISPATCH_INTERVAL_MS,
     maxExecutionsPerRulePerHour: env.AUTOMATION_MAX_EXECUTIONS_PER_RULE_PER_HOUR,
+    realtime,
   });
+
+  // Safety net for embeddings whose job was never queued or was lost.
+  const embeddingSweep = startEmbeddingSweep({ deps: knowledgeDeps, intervalMs: 30_000 });
 
   // Hourly retention jobs. The job id is derived from the hour, so with several workers only one
   // job per hour is ever created.
@@ -135,10 +204,26 @@ async function main(): Promise<void> {
   scheduleCleanup();
   const cleanupTimer = setInterval(scheduleCleanup, HOUR_MS);
 
+  // How many jobs are waiting, per queue: the first thing to look at when something is slow.
+  for (const [name, queue] of [
+    [QUEUE_NAMES.healthCheck, healthCheckQueue],
+    [QUEUE_NAMES.maintenance, maintenanceQueue],
+    [QUEUE_NAMES.automation, automationQueue],
+  ] as const) {
+    registry.gauge({
+      name: `nexus_queue_waiting_jobs_${name.replace(/-/g, '_')}`,
+      help: `Jobs waiting in the ${name} queue.`,
+      read: async () => (await queue.getJobCounts('waiting')).waiting ?? 0,
+    });
+  }
+
   const healthServer = startHealthServer(
     {
       host: env.WORKER_HEALTH_HOST,
       port: env.WORKER_HEALTH_PORT,
+      ...(env.METRICS_TOKEN
+        ? { metrics: { token: env.METRICS_TOKEN, render: () => registry.render() } }
+        : {}),
       probes: [
         { name: 'redis', check: () => connection.ping() },
         { name: 'postgres', check: () => pingDatabase(prisma) },
@@ -157,6 +242,7 @@ async function main(): Promise<void> {
     clearInterval(cleanupTimer);
     await dispatcher.stop();
     await automationDispatcher.stop();
+    await embeddingSweep.stop();
     // close() waits for in-flight jobs to finish before resolving.
     await Promise.all(workers.map((worker) => worker.close()));
     await Promise.all([
@@ -164,7 +250,7 @@ async function main(): Promise<void> {
       maintenanceQueue.close(),
       automationQueue.close(),
     ]);
-    await connection.quit();
+    await Promise.allSettled([connection.quit(), realtime.quit()]);
     await prisma.$disconnect();
     process.exit(0);
   };

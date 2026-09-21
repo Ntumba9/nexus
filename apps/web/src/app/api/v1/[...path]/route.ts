@@ -21,6 +21,9 @@ const FORWARDED_REQUEST_HEADERS = [
   'x-github-event',
 ];
 const RETURNED_RESPONSE_HEADERS = ['content-type', 'retry-after', 'x-request-id'];
+/** The real-time stream (`GET /orgs/:orgId/events`) stays open for as long as the tab does. */
+const isEventStream = (method: string, path: string[]): boolean =>
+  method === 'GET' && path.length === 3 && path[0] === 'orgs' && path[2] === 'events';
 
 async function proxy(
   request: NextRequest,
@@ -42,6 +45,7 @@ async function proxy(
   if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  const stream = isEventStream(request.method, path);
   let upstream: Response;
   try {
     upstream = await fetch(target, {
@@ -50,7 +54,9 @@ async function proxy(
       body: hasBody ? await request.arrayBuffer() : undefined,
       redirect: 'manual',
       cache: 'no-store',
-      signal: AbortSignal.timeout(15_000),
+      // A stream has no overall deadline (it would be cut every 15 s); it ends when the browser
+      // goes away, which aborts the upstream request too.
+      signal: stream ? request.signal : AbortSignal.timeout(15_000),
     });
   } catch {
     return Response.json(
@@ -63,6 +69,11 @@ async function proxy(
   for (const name of RETURNED_RESPONSE_HEADERS) {
     const value = upstream.headers.get(name);
     if (value) responseHeaders.set(name, value);
+  }
+  if (stream && upstream.ok) {
+    // Keep every layer from buffering or caching the stream.
+    responseHeaders.set('cache-control', 'no-cache, no-transform');
+    responseHeaders.set('x-accel-buffering', 'no');
   }
   for (const cookie of upstream.headers.getSetCookie())
     responseHeaders.append('set-cookie', cookie);
