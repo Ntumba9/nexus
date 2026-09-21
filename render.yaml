@@ -35,10 +35,10 @@ services:
       # Vercel, then Render's load balancer: two proxies in front of the API.
       - key: TRUST_PROXY_HOPS
         value: '2'
-      # Open only so the demo can be seeded (it registers the demo accounts). Change this to 'false' and
-      # redeploy as soon as that is done; docs/hosted-demo.md, step 5. Do not leave it open.
+      # Closed from the start: the demo data is seeded locally against the database before this API
+      # exists (docs/hosted-demo.md, step 1), so sign-up never has to be open on the internet.
       - key: REGISTRATION_ENABLED
-        value: 'true'
+        value: 'false'
 
   - type: worker
     name: nexus-worker

@@ -28,71 +28,63 @@ Every visitor sees the demo login, so that account must not be able to hurt anyt
 
 ## Steps
 
-The order matters: the API needs the web app's URL, and seeding needs the API.
+The order matters. The database is seeded on your own machine **before** the API goes online, so sign-up never has to be open on the internet, and Render's API starts with it closed.
 
-### 1. Neon (you)
+### 1. Neon: the database, and the demo data
 
-1. Create a project at neon.tech. Pick the region closest to your Render region.
-2. Copy the **connection string** (it starts with `postgresql://` and contains a password). Treat it like a password: paste it only into Render and into your own terminal.
-3. Apply the database migrations from your machine, once (this also creates the extensions):
+1. Create a project at neon.tech (or `npx neonctl auth`, then `neonctl projects create`). Pick the region nearest your Render region; Frankfurt pairs with Render's Frankfurt.
+2. Get the **direct** connection string (in the console's Connect dialog, turn connection pooling **off**; the pooled string does not suit Prisma migrations). It starts with `postgresql://` and contains a password, so treat it like one: paste it only into Render and into your own terminal.
+3. Apply the migrations once. This also creates the `vector` and `citext` extensions:
 
    ```bash
    DATABASE_URL='<your Neon connection string>' pnpm db:migrate:deploy
    ```
 
-### 2. Vercel: the web app
+4. Seed the demo data. Run the API and the worker on your machine against the Neon database, with sign-up open **locally only**, then run the seed script against your local API. The worker matters: the two seeded AI investigations are finished by it.
 
-Project settings (these are also in `apps/web/vercel.json`):
+   ```bash
+   export DATABASE_URL='<your Neon connection string>' REDIS_URL=redis://localhost:6379/2      API_PORT=3058 WEB_ORIGIN=http://localhost:3000 REGISTRATION_ENABLED=true NODE_ENV=development
+   pnpm --filter "./packages/*" build && pnpm --filter @nexus/api build && pnpm --filter @nexus/workers build
+   node apps/api/dist/main.js &
+   WORKER_HEALTH_PORT=3059 node workers/dist/main.js &
+   API_URL=http://localhost:3058 DEMO_PRIVATE_PASSWORD='<a long password only you know>' pnpm demo
+   ```
 
-- **Root Directory:** `apps/web`, with "Include source files outside of the Root Directory" on.
-- **Node.js version:** 22.x.
-- **Environment variables** (Production):
+   Then stop both processes. `DEMO_PRIVATE_PASSWORD` is what keeps the published viewer password from opening the accounts that can write; the script prints which login is safe to publish. This needs a local Redis; `docker compose up -d redis` provides one.
 
-  | Variable                                  | Value                                                       |
-  | ----------------------------------------- | ----------------------------------------------------------- |
-  | `API_INTERNAL_URL`                        | The Render API's URL, `https://nexus-api-….onrender.com`    |
-  | `REGISTRATION_ENABLED`                    | `false`                                                     |
-  | `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` | The viewer's email and password. Shown on the sign-in page. |
-
-The first deploy can happen before the API exists, to learn the URL; the site will load but sign-in will fail until step 3 is done.
-
-### 3. Render: the API, the worker and Redis
+### 2. Render: the API, the worker and Redis
 
 1. In Render, choose **New, Blueprint**, and point it at this repository. It reads `render.yaml` and creates the API, the worker and the Key Value store.
 2. It asks for the values marked `sync: false`:
 
    | Variable                     | Value                                                                                                 |
    | ---------------------------- | ----------------------------------------------------------------------------------------------------- |
-   | `DATABASE_URL`               | Your Neon connection string                                                                           |
+   | `DATABASE_URL`               | Your Neon direct connection string                                                                    |
    | `WEB_ORIGIN`                 | Your Vercel URL, exactly as it appears in the browser: `https://<name>.vercel.app`, no trailing slash |
-   | `INTEGRATION_ENCRYPTION_KEY` | `openssl rand -base64 32`. Keep a copy somewhere safe                                                 |
+   | `INTEGRATION_ENCRYPTION_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Keep a copy            |
 
 3. When the API is live, `https://<api>.onrender.com/health/ready` should say both PostgreSQL and Redis are up.
-4. Put the API's URL into Vercel's `API_INTERNAL_URL` and redeploy the web app.
 
-### 4. Seed the demo data
+### 3. Vercel: the web app
 
-The script registers the demo accounts, so sign-up must still be open on the API when it runs. `render.yaml` starts with `REGISTRATION_ENABLED=true` for exactly this reason. Keep the site's URL to yourself until step 5.
+Project settings (Root Directory `apps/web`; the build commands are in `apps/web/vercel.json`). Environment variables (Production):
 
-```bash
-API_URL='https://<api>.onrender.com' \
-WEB_ORIGIN='https://<name>.vercel.app' \
-DEMO_PRIVATE_PASSWORD='<a long password only you know>' \
-pnpm demo --allow-remote
-```
+| Variable                                  | Value                                                       |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `API_INTERNAL_URL`                        | The Render API's URL, `https://nexus-api-….onrender.com`    |
+| `REGISTRATION_ENABLED`                    | `false`                                                     |
+| `DEMO_LOGIN_EMAIL`, `DEMO_LOGIN_PASSWORD` | The viewer's email and password. Shown on the sign-in page. |
 
-`--allow-remote` is the script's safety catch: it creates accounts with known passwords, so it refuses anything but localhost without it. On a public demo that is what you intend, and `DEMO_PRIVATE_PASSWORD` is what keeps the published viewer password from opening the accounts that can write. The script prints which login is safe to publish.
+Until `API_INTERNAL_URL` points at a running API, the site shows its "backend is offline" page. Redeploy after setting it.
 
-### 5. Close sign-up and check
-
-**This step is not optional.** Set `REGISTRATION_ENABLED=false` on the API in Render and let it redeploy. Then, in a private browser window:
+### 4. Check it, in a private browser window
 
 - The sign-in page shows the demo login, and no "Create an account" link.
-- Signing in as the viewer shows the dashboard, incidents and runbooks.
+- Signing in as the viewer shows the dashboard, incidents, runbooks and the two AI investigations.
 - Creating anything as the viewer is refused.
 - `POST /api/v1/auth/register` against the API answers 403 `REGISTRATION_DISABLED`.
 
 ## What was and was not verified
 
-- **Verified:** the sign-up switch (API refusal, web hiding, existing accounts still sign in), the demo script's split passwords, and everything in the single-machine Docker setup that this reuses.
-- **Not verified:** `render.yaml` and the Vercel settings were written without accounts to apply them to, and nothing here has run on Vercel, Render or Neon. The most likely trouble spots are the Render blueprint's field names, the Vercel monorepo build (which builds the workspace packages first), and the proxy hop count. Treat the first deployment as a test and expect small fixes.
+- **Verified on a real Neon project (PostgreSQL 18, Frankfurt):** all migrations apply and create the `vector` and `citext` extensions; the API and worker run against it; the seed script populates it, including both AI investigations; the published password opens only the read-only viewer (the owner and developer accounts refuse it); the sign-up switch, and everything in the single-machine Docker setup that this reuses.
+- **Not verified:** `render.yaml` has not been applied to a Render account, and the Vercel-to-Render connection (including the proxy hop count) has not run. The most likely trouble spots are the Render blueprint's field names and that hop count. Treat the first Render deployment as a test and expect small fixes.
