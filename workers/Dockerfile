@@ -3,7 +3,7 @@
 #
 # Deliberately single-stage: the runtime image keeps the built workspace (including the Prisma CLI
 # needed for migrations). Slimming to a pruned production image is a Phase 12 task.
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 
 # pnpm is pinned by "packageManager" in package.json. Cache it at build time in a shared location
 # so the unprivileged runtime user never needs network access to run `pnpm`.
