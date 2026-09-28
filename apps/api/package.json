@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@nestjs/cli": "12.0.3",
-    "@nestjs/testing": "11.2.5",
+    "@nestjs/testing": "12.1.0",
     "@types/express": "5.0.6",
     "@types/node": "22.20.3",
     "@types/supertest": "7.2.1",
